@@ -29,6 +29,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
+	"github.com/nextlevelbuilder/goclaw/internal/scraper"
 	"github.com/nextlevelbuilder/goclaw/internal/scheduler"
 	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
@@ -186,6 +187,10 @@ func runGateway() {
 	webFetchTool := tools.NewWebFetchTool(tools.WebFetchConfig{})
 	toolsReg.Register(webFetchTool)
 	slog.Info("web_fetch tool enabled")
+
+	// Scraper tool (web scraping + social platform actors)
+	toolsReg.Register(scraper.NewScraperTool())
+	slog.Info("scraper tool enabled")
 
 	// Vision fallback tool (for non-vision providers like MiniMax)
 	toolsReg.Register(tools.NewReadImageTool(providerRegistry))

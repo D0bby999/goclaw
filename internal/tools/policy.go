@@ -11,7 +11,7 @@ import (
 // Tool groups map group names to tool names.
 var toolGroups = map[string][]string{
 	"memory":     {"memory_search", "memory_get"},
-	"web":        {"web_search", "web_fetch"},
+	"web":        {"web_search", "web_fetch", "scraper"},
 	"fs":         {"read_file", "write_file", "list_files", "edit"},
 	"runtime":    {"exec"},
 	"sessions":   {"sessions_list", "sessions_history", "sessions_send", "spawn", "session_status"},
@@ -23,7 +23,7 @@ var toolGroups = map[string][]string{
 	// Composite group: all goclaw native tools (excludes MCP/custom plugins).
 	"goclaw": {
 		"read_file", "write_file", "list_files", "edit", "exec",
-		"web_search", "web_fetch", "browser",
+		"web_search", "web_fetch", "scraper", "browser",
 		"memory_search", "memory_get",
 		"sessions_list", "sessions_history", "sessions_send", "spawn", "session_status",
 		"cron", "message", "create_forum_topic",

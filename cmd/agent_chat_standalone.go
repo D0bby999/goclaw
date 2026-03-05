@@ -18,6 +18,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
+	"github.com/nextlevelbuilder/goclaw/internal/scraper"
 	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -150,6 +151,7 @@ func bootstrapStandaloneAgent(cfg *config.Config, agentName string) (*agent.Loop
 		toolsReg.Register(webSearchTool)
 	}
 	toolsReg.Register(tools.NewWebFetchTool(tools.WebFetchConfig{}))
+	toolsReg.Register(scraper.NewScraperTool())
 
 	// 4. Bootstrap files
 	rawFiles := bootstrap.LoadWorkspaceFiles(workspace)
