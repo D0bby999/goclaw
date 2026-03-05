@@ -71,6 +71,7 @@ Context keys ensure each tool call receives the correct per-call values without 
 |------|-------------|
 | `web_search` | Search the web |
 | `web_fetch` | Fetch and parse a URL |
+| `scraper` | Composite web scraper with 11 platform actors (reddit, twitter, tiktok, youtube, instagram, instagram_reel, facebook, google_search, google_trends, ecommerce, website). Single tool with `actor` parameter for platform selection |
 
 ### Memory (group: `memory`)
 
