@@ -51,8 +51,9 @@ var coreToolSummaries = map[string]string{
 	"memory_search": "Search indexed memory files (MEMORY.md + memory/*.md)",
 	"memory_get":    "Read specific sections of memory files",
 	"spawn":         "Spawn a subagent or delegate to another agent",
-	"web_search":    "Search the web",
+	"web_search":    "Search the web (use scraper first for Reddit, Twitter, TikTok, YouTube, Instagram, Facebook, Google Trends, ecommerce)",
 	"web_fetch":     "Fetch and extract content from a URL",
+	"scraper":       "Scrape social media & websites. Actors: reddit, twitter, tiktok, youtube, instagram, instagram_reel, facebook, google_search, google_trends, ecommerce, website. PREFER this over web_search/web_fetch for supported platforms.",
 	"cron":          "Manage scheduled jobs and reminders",
 	"skill_search":  "Search available skills by keyword (weather, translate, github, etc.)",
 	"browser":          "Browse web pages interactively",
@@ -196,6 +197,31 @@ func buildToolingSection(toolNames []string, hasSandbox bool) []string {
 			"You do NOT need to use `docker run` or `docker exec` — just run commands directly (e.g. `python3 script.py`).",
 			"The sandbox has: bash, python3, git, curl, jq, ripgrep.",
 			"Do NOT attempt to install Docker or run Docker commands inside exec.",
+		)
+	}
+
+	// Tool priority guidance for scraper vs web_search
+	hasScraperTool := false
+	for _, name := range toolNames {
+		if name == "scraper" {
+			hasScraperTool = true
+			break
+		}
+	}
+	if hasScraperTool {
+		lines = append(lines,
+			"",
+			"### Tool Priority: scraper > web_search > web_fetch",
+			"",
+			"When the user asks about content on Reddit, Twitter/X, TikTok, YouTube, Instagram, Facebook, or Google Trends:",
+			"1. Use `scraper` FIRST with the matching actor (reddit, twitter, tiktok, youtube, instagram, facebook, google_trends).",
+			"2. Only fall back to `web_search` if scraper fails or the platform is not supported.",
+			"3. For general web queries not tied to a specific platform, use `web_search` or `google_search` actor.",
+			"",
+			"IMPORTANT: When `scraper` returns results successfully, use ONLY those results to compose your response.",
+			"Do NOT call `browser`, `web_fetch`, or `web_search` to re-fetch the same URL after scraper succeeds.",
+			"The scraper result is authoritative — respond directly from it.",
+			"",
 		)
 	}
 
