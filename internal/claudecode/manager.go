@@ -280,15 +280,17 @@ func (m *ProcessManager) StopAll() {
 }
 
 // SendPrompt sends a follow-up prompt by stopping the current process and restarting with --resume.
-func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, prompt string) error {
+// SendPrompt sends a follow-up prompt by stopping the current process and restarting with --resume.
+// Returns the new session ID so callers can redirect to it.
+func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, prompt string) (uuid.UUID, error) {
 	sess, err := m.store.GetSession(ctx, sessionID)
 	if err != nil {
-		return fmt.Errorf("get session: %w", err)
+		return uuid.Nil, fmt.Errorf("get session: %w", err)
 	}
 
 	proj, err := m.store.GetProject(ctx, sess.ProjectID)
 	if err != nil {
-		return fmt.Errorf("get project: %w", err)
+		return uuid.Nil, fmt.Errorf("get project: %w", err)
 	}
 
 	// Stop current process if running
@@ -303,7 +305,7 @@ func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, pr
 		resumeID = *sess.ClaudeSessionID
 	}
 	if resumeID == "" {
-		return fmt.Errorf("no claude session_id to resume")
+		return uuid.Nil, fmt.Errorf("no claude session_id to resume")
 	}
 
 	// Parse allowed tools from project
@@ -323,7 +325,7 @@ func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, pr
 
 	newID, err := m.Start(ctx, newOpts, sess.StartedBy)
 	if err != nil {
-		return fmt.Errorf("restart with resume: %w", err)
+		return uuid.Nil, fmt.Errorf("restart with resume: %w", err)
 	}
 
 	// Link new session to old claude_session_id
@@ -331,7 +333,7 @@ func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, pr
 		"claude_session_id": resumeID,
 	})
 
-	return nil
+	return newID, nil
 }
 
 // IsRunning returns true if the session has an active process.

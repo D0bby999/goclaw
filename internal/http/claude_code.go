@@ -59,12 +59,8 @@ func (h *ClaudeCodeHandler) auth(next http.HandlerFunc) http.HandlerFunc {
 // --- Projects ---
 
 func (h *ClaudeCodeHandler) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	userID := store.UserIDFromContext(r.Context())
-	if userID == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "X-GoClaw-User-Id header required"})
-		return
-	}
-	projects, err := h.store.ListProjects(r.Context(), userID)
+	// List all active projects (management UI) — no owner filter
+	projects, err := h.store.ListProjects(r.Context(), "")
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -288,11 +284,12 @@ func (h *ClaudeCodeHandler) handleSendPrompt(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	if err := h.manager.SendPrompt(r.Context(), id, body.Prompt); err != nil {
+	newID, err := h.manager.SendPrompt(r.Context(), id, body.Prompt)
+	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "new_session_id": newID.String()})
 }
 
 func (h *ClaudeCodeHandler) handleStopSession(w http.ResponseWriter, r *http.Request) {

@@ -46,15 +46,25 @@ func (m *ClaudeCodeMethods) handleProjectsList(_ context.Context, client *gatewa
 		return
 	}
 	var params struct {
-		OwnerID string `json:"owner_id"`
+		TeamID string `json:"team_id"`
 	}
 	if req.Params != nil {
 		_ = json.Unmarshal(req.Params, &params)
 	}
-	if params.OwnerID == "" {
-		params.OwnerID = client.UserID()
+
+	var projects []store.CCProjectData
+	var err error
+	if params.TeamID != "" {
+		teamID, parseErr := uuid.Parse(params.TeamID)
+		if parseErr != nil {
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid team_id"))
+			return
+		}
+		projects, err = m.ccStore.ListProjectsByTeam(context.Background(), teamID)
+	} else {
+		// No filter — list all active projects (management UI)
+		projects, err = m.ccStore.ListProjects(context.Background(), "")
 	}
-	projects, err := m.ccStore.ListProjects(context.Background(), params.OwnerID)
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
@@ -320,11 +330,12 @@ func (m *ClaudeCodeMethods) handleSessionsPrompt(_ context.Context, client *gate
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid id"))
 		return
 	}
-	if err := m.manager.SendPrompt(context.Background(), id, params.Prompt); err != nil {
+	newID, err := m.manager.SendPrompt(context.Background(), id, params.Prompt)
+	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]string{"status": "ok"}))
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"status": "ok", "new_session_id": newID.String()}))
 }
 
 func (m *ClaudeCodeMethods) handleSessionsStop(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {

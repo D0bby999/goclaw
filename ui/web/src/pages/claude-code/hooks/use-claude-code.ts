@@ -1,27 +1,45 @@
-import { useState, useCallback } from "react";
-import { useWs } from "@/hooks/use-ws";
+import { useCallback } from "react";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
+import { useWs, useHttp } from "@/hooks/use-ws";
+import { useAuthStore } from "@/stores/use-auth-store";
 import { Methods } from "@/api/protocol";
+import { queryKeys } from "@/lib/query-keys";
+import { toast } from "@/stores/use-toast-store";
 import type { CCProject, CCSession, CCSessionLog } from "@/types/claude-code";
 
 export function useClaudeCode() {
   const ws = useWs();
-  const [projects, setProjects] = useState<CCProject[]>([]);
-  const [loading, setLoading] = useState(false);
+  const http = useHttp();
+  const connected = useAuthStore((s) => s.connected);
+  const queryClient = useQueryClient();
 
-  const loadProjects = useCallback(async () => {
-    if (!ws.isConnected) return;
-    setLoading(true);
-    try {
+  const { data: projects = [], isLoading: loading, error: queryError } = useQuery({
+    queryKey: queryKeys.cc.projects,
+    queryFn: async () => {
+      // Try HTTP first (reliable, no WS dependency)
+      try {
+        const res = await http.get<{ projects: CCProject[]; count: number }>("/v1/cc/projects");
+        if (res.projects) return res.projects;
+      } catch {
+        // HTTP may fail — fall through to WS
+      }
+
+      // Fallback: WS
+      if (!ws.isConnected) return [];
       const res = await ws.call<{ projects: CCProject[]; count: number }>(
         Methods.CC_PROJECTS_LIST,
       );
-      setProjects(res.projects ?? []);
-    } catch {
-      // ignore
-    } finally {
-      setLoading(false);
-    }
-  }, [ws]);
+      return res.projects ?? [];
+    },
+    enabled: connected,
+  });
+
+  const error = queryError instanceof Error ? queryError.message : queryError ? "Failed to load projects" : null;
+
+  const invalidateProjects = useCallback(
+    () => queryClient.invalidateQueries({ queryKey: queryKeys.cc.projects }),
+    [queryClient],
+  );
 
   const createProject = useCallback(
     async (params: {
@@ -31,11 +49,18 @@ export function useClaudeCode() {
       description?: string;
       max_sessions?: number;
       allowed_tools?: string[];
+      team_id?: string;
     }) => {
-      await ws.call(Methods.CC_PROJECTS_CREATE, params);
-      loadProjects();
+      try {
+        await ws.call(Methods.CC_PROJECTS_CREATE, params);
+        await invalidateProjects();
+        toast.success("Project created", `${params.name} has been added`);
+      } catch (err) {
+        toast.error("Failed to create project", err instanceof Error ? err.message : "Unknown error");
+        throw err;
+      }
     },
-    [ws, loadProjects],
+    [ws, invalidateProjects],
   );
 
   const getProject = useCallback(
@@ -52,24 +77,37 @@ export function useClaudeCode() {
   const updateProject = useCallback(
     async (
       projectId: string,
-      params: Partial<Pick<CCProject, "name" | "description" | "work_dir" | "max_sessions" | "allowed_tools" | "status">>,
+      params: Partial<Pick<CCProject, "name" | "slug" | "description" | "work_dir" | "max_sessions" | "allowed_tools" | "status" | "team_id">>,
     ) => {
-      await ws.call(Methods.CC_PROJECTS_UPDATE, { id: projectId, updates: params });
+      try {
+        await ws.call(Methods.CC_PROJECTS_UPDATE, { id: projectId, updates: params });
+        await invalidateProjects();
+        toast.success("Project updated");
+      } catch (err) {
+        toast.error("Failed to update project", err instanceof Error ? err.message : "Unknown error");
+        throw err;
+      }
     },
-    [ws],
+    [ws, invalidateProjects],
   );
 
   const deleteProject = useCallback(
     async (projectId: string) => {
-      await ws.call(Methods.CC_PROJECTS_DELETE, { id: projectId });
-      loadProjects();
+      try {
+        await ws.call(Methods.CC_PROJECTS_DELETE, { id: projectId });
+        await invalidateProjects();
+        toast.success("Project deleted");
+      } catch (err) {
+        toast.error("Failed to delete project", err instanceof Error ? err.message : "Unknown error");
+        throw err;
+      }
     },
-    [ws, loadProjects],
+    [ws, invalidateProjects],
   );
 
   const listSessions = useCallback(
     async (projectId: string) => {
-      const res = await ws.call<{ sessions: CCSession[]; count: number }>(
+      const res = await ws.call<{ sessions: CCSession[]; total: number }>(
         Methods.CC_SESSIONS_LIST,
         { project_id: projectId },
       );
@@ -101,8 +139,9 @@ export function useClaudeCode() {
   );
 
   const sendPrompt = useCallback(
-    async (sessionId: string, prompt: string) => {
-      await ws.call(Methods.CC_SESSIONS_PROMPT, { id: sessionId, prompt });
+    async (sessionId: string, prompt: string): Promise<string | undefined> => {
+      const res = await ws.call<{ new_session_id?: string }>(Methods.CC_SESSIONS_PROMPT, { id: sessionId, prompt });
+      return res.new_session_id;
     },
     [ws],
   );
@@ -128,7 +167,8 @@ export function useClaudeCode() {
   return {
     projects,
     loading,
-    loadProjects,
+    error,
+    loadProjects: invalidateProjects,
     createProject,
     getProject,
     updateProject,
