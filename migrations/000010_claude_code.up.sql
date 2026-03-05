@@ -11,7 +11,7 @@ CREATE TABLE cc_projects (
     claude_config   JSONB DEFAULT '{}',
     max_sessions    INT NOT NULL DEFAULT 3,
     owner_id        VARCHAR(255) NOT NULL,
-    team_id         UUID REFERENCES teams(id) ON DELETE SET NULL,
+    team_id         UUID REFERENCES agent_teams(id) ON DELETE SET NULL,
     status          VARCHAR(20) NOT NULL DEFAULT 'active',
     created_at      TIMESTAMPTZ DEFAULT NOW(),
     updated_at      TIMESTAMPTZ DEFAULT NOW()

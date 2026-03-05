@@ -116,13 +116,16 @@ func (s *PGCCStore) scanProjectRow(row *sql.Row) (*store.CCProjectData, error) {
 	var p store.CCProjectData
 	var desc, status sql.NullString
 	var teamID *uuid.UUID
+	var allowedTools, claudeConfig []byte
 	if err := row.Scan(
 		&p.ID, &p.Name, &p.Slug, &p.WorkDir, &desc,
-		&p.AllowedTools, &p.ClaudeConfig, &p.MaxSessions,
+		&allowedTools, &claudeConfig, &p.MaxSessions,
 		&p.OwnerID, &teamID, &status, &p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
+	p.AllowedTools = allowedTools
+	p.ClaudeConfig = claudeConfig
 	if desc.Valid {
 		p.Description = desc.String
 	}
@@ -139,13 +142,16 @@ func (s *PGCCStore) scanProjectRows(rows *sql.Rows) ([]store.CCProjectData, erro
 		var p store.CCProjectData
 		var desc, status sql.NullString
 		var teamID *uuid.UUID
+		var allowedTools, claudeConfig []byte
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.Slug, &p.WorkDir, &desc,
-			&p.AllowedTools, &p.ClaudeConfig, &p.MaxSessions,
+			&allowedTools, &claudeConfig, &p.MaxSessions,
 			&p.OwnerID, &teamID, &status, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
+		p.AllowedTools = allowedTools
+		p.ClaudeConfig = claudeConfig
 		if desc.Valid {
 			p.Description = desc.String
 		}

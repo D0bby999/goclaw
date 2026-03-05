@@ -100,11 +100,15 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 		prompt = fmt.Sprintf("IMPORTANT: Focus only on files matching: %s. Do not modify files outside this scope.\n\n%s", opts.Scope, prompt)
 	}
 
-	procCtx, cancel := context.WithCancel(ctx)
+	// Use Background so the child process outlives the HTTP request context
+	procCtx, cancel := context.WithCancel(context.Background())
 	cmd := exec.CommandContext(procCtx, "claude", args...)
 	cmd.Dir = workDir
 	cmd.Env = buildEnv(opts.EnvVars)
 	cmd.Stdin = strings.NewReader(prompt)
+
+	var stderrBuf strings.Builder
+	cmd.Stderr = &stderrBuf
 
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
@@ -199,6 +203,10 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 		if waitErr != nil {
 			finalStatus = store.CCSessionStatusFailed
 			s := waitErr.Error()
+			if stderr := stderrBuf.String(); stderr != "" {
+				s += ": " + stderr
+				slog.Warn("cc: process stderr", "session_id", sess.ID, "stderr", stderr)
+			}
 			errStr = &s
 		}
 
@@ -349,7 +357,7 @@ func (m *ProcessManager) ActiveCount(projectID uuid.UUID) int {
 
 // buildCLIArgs constructs the claude CLI arguments.
 func buildCLIArgs(opts StartOpts) []string {
-	args := []string{"-p", "-", "--output-format", "stream-json", "--no-input"}
+	args := []string{"-p", "-", "--output-format", "stream-json", "--verbose"}
 
 	if opts.ResumeID != "" {
 		args = append(args, "--resume", opts.ResumeID)
@@ -367,8 +375,15 @@ func buildCLIArgs(opts StartOpts) []string {
 }
 
 // buildEnv creates environment for the child process.
+// Strips CLAUDECODE env var to avoid nested session detection.
 func buildEnv(extra map[string]string) []string {
-	env := os.Environ()
+	var env []string
+	for _, e := range os.Environ() {
+		if strings.HasPrefix(e, "CLAUDECODE=") {
+			continue
+		}
+		env = append(env, e)
+	}
 	for k, v := range extra {
 		env = append(env, fmt.Sprintf("%s=%s", k, v))
 	}
