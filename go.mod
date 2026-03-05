@@ -29,8 +29,10 @@ require (
 
 require (
 	filippo.io/edwards25519 v1.1.0 // indirect
+	github.com/PuerkitoBio/goquery v1.11.0 // indirect
 	github.com/akutz/memconn v0.1.0 // indirect
 	github.com/alexbrainman/sspi v0.0.0-20231016080023-1a75b4708caa // indirect
+	github.com/andybalholm/cascadia v1.3.3 // indirect
 	github.com/atotto/clipboard v0.1.4 // indirect
 	github.com/aws/aws-sdk-go-v2 v1.41.0 // indirect
 	github.com/aws/aws-sdk-go-v2/config v1.29.5 // indirect
@@ -92,6 +94,9 @@ require (
 	github.com/tailscale/peercred v0.0.0-20250107143737-35a0c7bd7edc // indirect
 	github.com/tailscale/web-client-prebuilt v0.0.0-20250124233751-d4cd19a26976 // indirect
 	github.com/tailscale/wireguard-go v0.0.0-20250716170648-1d0488a3d7da // indirect
+	github.com/tidwall/gjson v1.18.0 // indirect
+	github.com/tidwall/match v1.1.1 // indirect
+	github.com/tidwall/pretty v1.2.0 // indirect
 	github.com/wk8/go-ordered-map/v2 v2.1.8 // indirect
 	github.com/x448/float16 v0.8.4 // indirect
 	github.com/xo/terminfo v0.0.0-20220910002029-abceb7e1c41e // indirect
