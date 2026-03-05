@@ -4,6 +4,21 @@ All notable changes to GoClaw project. Format: YYYY-MM-DD | Type | Brief descrip
 
 ## 2026
 
+### 2026-03-05
+
+**feat:** Claude Code Orchestration — process manager + HTTP/WebSocket APIs for Claude Code CLI
+
+- New package `internal/claudecode/`: ProcessManager for spawning and monitoring Claude Code CLI child processes
+- ProcessManager lifecycle: spawn, stream event parsing, concurrent session enforcement, signal handling
+- Database migration 000010: three new tables (cc_projects, cc_sessions, cc_session_logs) with indices
+- CCStore interface: 15 methods for projects (CRUD), sessions (lifecycle), logs (event streaming)
+- HTTP API: 11 endpoints under `/v1/cc/` (project CRUD, session start/stop/logs, prompt sending)
+- WebSocket RPC: 11 methods (cc.projects.*, cc.sessions.*) for real-time project and session management
+- WebSocket events: `cc.output` (stream events), `cc.session.status` (status changes)
+- React UI: 8 components for project management, session terminal, real-time process output monitoring
+- Features: git worktree isolation, env var encryption (AES-256-GCM), per-project session limits, owner/team access control
+- Files: 7 Go files in `internal/claudecode/`, HTTP handler, RPC handler, 8 React components
+
 ### 2026-03-04
 
 **feat:** Scraper tool Go rewrite — 11-actor composite web scraper

@@ -84,6 +84,7 @@ flowchart TD
         CT_S[CustomToolStore]
         AL_S[AgentLinkStore]
         TM_S[TeamStore]
+        CC_S[CCStore]
     end
 
     WS --> WSS
@@ -112,10 +113,11 @@ flowchart TD
 | Module | Description |
 |--------|-------------|
 | `internal/gateway/` | WebSocket + HTTP server, client handling, method router |
-| `internal/gateway/methods/` | RPC method handlers: chat, agents, agent_links, teams, delegations, sessions, config, skills, cron, pairing, exec approval, usage, send |
+| `internal/gateway/methods/` | RPC method handlers: chat, agents, agent_links, teams, delegations, sessions, config, skills, cron, pairing, exec approval, usage, send, **claude code** |
 | `internal/agent/` | Agent loop (think, act, observe), router, resolver, system prompt builder, sanitization, pruning, tracing, memory flush, DELEGATION.md + TEAM.md injection |
 | `internal/providers/` | LLM providers: Anthropic (native HTTP + SSE streaming), OpenAI-compatible (HTTP + SSE, 12+ providers), DashScope (Qwen), extended thinking support, retry logic |
 | `internal/tools/` | Tool registry, filesystem ops, exec/shell, policy engine, subagent, delegation manager, team tools, evaluate loop, handoff, context file + memory interceptors, credential scrubbing, rate limiting, PathDenyable |
+| `internal/claudecode/` | Claude Code orchestration: process manager, stream parser, work directory validation, git worktree support |
 | `internal/tools/dynamic_loader.go` | Custom tool loader: LoadGlobal (startup), LoadForAgent (per-agent clone), ReloadGlobal (cache invalidation) |
 | `internal/tools/dynamic_tool.go` | Custom tool executor: command template rendering, shell escaping, encrypted env vars |
 | `internal/hooks/` | Hook engine: quality gates, command evaluator, agent evaluator, recursion prevention (`WithSkipHooks`) |

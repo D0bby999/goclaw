@@ -33,6 +33,10 @@ const (
 	EventDelegationStarted   = "delegation.started"
 	EventDelegationCompleted = "delegation.completed"
 
+	// Claude Code events (real-time output streaming).
+	EventCCOutput        = "cc.output"
+	EventCCSessionStatus = "cc.session.status"
+
 	// Cache invalidation events (internal, not forwarded to WS clients).
 	EventCacheInvalidate = "cache.invalidate"
 

@@ -119,6 +119,21 @@ const (
 	MethodDelegationsGet  = "delegations.get"
 )
 
+// Claude Code orchestration (managed mode)
+const (
+	MethodCCProjectsList   = "cc.projects.list"
+	MethodCCProjectsCreate = "cc.projects.create"
+	MethodCCProjectsGet    = "cc.projects.get"
+	MethodCCProjectsUpdate = "cc.projects.update"
+	MethodCCProjectsDelete = "cc.projects.delete"
+	MethodCCSessionsList   = "cc.sessions.list"
+	MethodCCSessionsStart  = "cc.sessions.start"
+	MethodCCSessionsGet    = "cc.sessions.get"
+	MethodCCSessionsPrompt = "cc.sessions.prompt"
+	MethodCCSessionsStop   = "cc.sessions.stop"
+	MethodCCSessionsLogs   = "cc.sessions.logs"
+)
+
 // Phase 3+ - NICE TO HAVE methods
 const (
 	MethodLogsTail = "logs.tail"

@@ -15,7 +15,9 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	ccpkg "github.com/nextlevelbuilder/goclaw/internal/claudecode"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
+	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/discord"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/feishu"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/telegram"
@@ -642,6 +644,7 @@ func runGateway() {
 	// for immediate cache invalidation on agents.files.set.
 	var contextFileInterceptor *tools.ContextFileInterceptor
 	var delegateMgr *tools.DelegateManager
+	var ccManagerForShutdown *ccpkg.ProcessManager
 
 	// Managed mode: set agent store for tools_invoke context injection + wire extras
 	if managedStores != nil && managedStores.Agents != nil {
@@ -658,7 +661,7 @@ func runGateway() {
 		}
 
 		contextFileInterceptor, delegateMgr = wireManagedExtras(managedStores, agentRouter, providerRegistry, msgBus, sessStore, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, dynamicLoader)
-		agentsH, skillsH, tracesH, mcpH, customToolsH, channelInstancesH, providersH, delegationsH, builtinToolsH := wireManagedHTTP(managedStores, cfg.Gateway.Token, msgBus, toolsReg, providerRegistry, permPE.IsOwner)
+		agentsH, skillsH, tracesH, mcpH, customToolsH, channelInstancesH, providersH, delegationsH, builtinToolsH, _ := wireManagedHTTP(managedStores, cfg.Gateway.Token, msgBus, toolsReg, providerRegistry, permPE.IsOwner)
 		if agentsH != nil {
 			server.SetAgentsHandler(agentsH)
 		}
@@ -691,6 +694,36 @@ func runGateway() {
 		if managedStores.BuiltinTools != nil {
 			seedBuiltinTools(context.Background(), managedStores.BuiltinTools)
 			applyBuiltinToolDisables(context.Background(), managedStores.BuiltinTools, toolsReg)
+		}
+
+		// Claude Code orchestration (managed mode only)
+		if managedStores.CC != nil {
+			ccEventCB := func(sessionID uuid.UUID, event ccpkg.StreamEvent) {
+				// Persist log
+				_ = managedStores.CC.AppendLog(context.Background(), &store.CCSessionLogData{
+					SessionID: sessionID,
+					EventType: event.Type,
+					Content:   event.Raw,
+				})
+				// Broadcast to WS clients
+				msgBus.Broadcast(bus.Event{
+					Name: protocol.EventCCOutput,
+					Payload: map[string]interface{}{
+						"session_id": sessionID,
+						"event":      event,
+					},
+				})
+			}
+			ccManager := ccpkg.NewProcessManager(managedStores.CC, ccEventCB)
+			ccHandler := httpapi.NewClaudeCodeHandler(managedStores.CC, ccManager, cfg.Gateway.Token, msgBus, permPE.IsOwner)
+			server.SetClaudeCodeHandler(ccHandler)
+
+			// Register WS RPC methods
+			methods.NewClaudeCodeMethods(managedStores.CC, ccManager, msgBus).Register(server.Router())
+
+			// StopAll is called in the shutdown block below (after ctx is created)
+			ccManagerForShutdown = ccManager
+			slog.Info("managed mode: claude code orchestration enabled")
 		}
 	}
 
@@ -1061,6 +1094,12 @@ func runGateway() {
 		cronStore.Stop()
 		if heartbeatSvc != nil {
 			heartbeatSvc.Stop()
+		}
+
+		// Stop Claude Code processes
+		if ccManagerForShutdown != nil {
+			slog.Info("stopping Claude Code processes...")
+			ccManagerForShutdown.StopAll()
 		}
 
 		// Stop sandbox pruning + release containers

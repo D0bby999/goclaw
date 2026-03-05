@@ -68,6 +68,12 @@ const TtsPage = lazy(() =>
 const DelegationsPage = lazy(() =>
   import("@/pages/delegations/delegations-page").then((m) => ({ default: m.DelegationsPage })),
 );
+const CCProjectsPage = lazy(() =>
+  import("@/pages/claude-code/projects-page").then((m) => ({ default: m.ProjectsPage })),
+);
+const CCSessionPage = lazy(() =>
+  import("@/pages/claude-code/session-page").then((m) => ({ default: m.SessionPage })),
+);
 
 function PageLoader() {
   return (
@@ -118,6 +124,9 @@ export function AppRoutes() {
           <Route path={ROUTES.BUILTIN_TOOLS} element={<BuiltinToolsPage />} />
           <Route path={ROUTES.MCP} element={<MCPPage />} />
           <Route path={ROUTES.TTS} element={<TtsPage />} />
+          <Route path={ROUTES.CC_PROJECTS} element={<CCProjectsPage key="cc-list" />} />
+          <Route path={ROUTES.CC_PROJECT_DETAIL} element={<CCProjectsPage key="cc-detail" />} />
+          <Route path={ROUTES.CC_SESSION} element={<CCSessionPage />} />
         </Route>
 
         {/* Catch-all → overview */}

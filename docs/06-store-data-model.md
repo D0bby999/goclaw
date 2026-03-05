@@ -12,9 +12,9 @@ flowchart TD
     CHECK -->|Yes| PG["PostgreSQL Backend"]
     CHECK -->|No| FILE["File Backend"]
 
-    PG --> PG_STORES["PGSessionStore<br/>PGAgentStore<br/>PGProviderStore<br/>PGCronStore<br/>PGPairingStore<br/>PGSkillStore<br/>PGMemoryStore<br/>PGTracingStore<br/>PGMCPServerStore<br/>PGCustomToolStore<br/>PGChannelInstanceStore<br/>PGConfigSecretsStore<br/>PGAgentLinkStore<br/>PGTeamStore"]
+    PG --> PG_STORES["PGSessionStore<br/>PGAgentStore<br/>PGProviderStore<br/>PGCronStore<br/>PGPairingStore<br/>PGSkillStore<br/>PGMemoryStore<br/>PGTracingStore<br/>PGMCPServerStore<br/>PGCustomToolStore<br/>PGChannelInstanceStore<br/>PGConfigSecretsStore<br/>PGAgentLinkStore<br/>PGTeamStore<br/>PGCCStore"]
 
-    FILE --> FILE_STORES["FileSessionStore<br/>FileMemoryStore (SQLite + FTS5)<br/>FileCronStore<br/>FilePairingStore<br/>FileSkillStore<br/>FileAgentStore (filesystem + SQLite)<br/>ProviderStore = nil<br/>TracingStore = nil<br/>MCPServerStore = nil<br/>CustomToolStore = nil<br/>AgentLinks = nil<br/>Teams = nil"]
+    FILE --> FILE_STORES["FileSessionStore<br/>FileMemoryStore (SQLite + FTS5)<br/>FileCronStore<br/>FilePairingStore<br/>FileSkillStore<br/>FileAgentStore (filesystem + SQLite)<br/>ProviderStore = nil<br/>TracingStore = nil<br/>MCPServerStore = nil<br/>CustomToolStore = nil<br/>AgentLinks = nil<br/>Teams = nil<br/>CCStore = nil"]
 ```
 
 ---
@@ -39,6 +39,7 @@ The `Stores` struct is the top-level container holding all storage backends. In 
 | ConfigSecretsStore | `nil` | `PGConfigSecretsStore` | Managed only |
 | AgentLinkStore | `nil` | `PGAgentLinkStore` | Managed only |
 | TeamStore | `nil` | `PGTeamStore` | Managed only |
+| CCStore | `nil` | `PGCCStore` | Managed only |
 
 ### Standalone AgentStore (FileAgentStore)
 
@@ -439,6 +440,11 @@ flowchart TD
     subgraph "Custom Tools"
         CT["custom_tools"]
     end
+
+    subgraph "Claude Code"
+        CC["cc_projects"] --> CCS["cc_sessions"]
+        CCS --> CCL["cc_session_logs"]
+    end
 ```
 
 ### Key Tables
@@ -467,6 +473,9 @@ flowchart TD
 | `cron_jobs` | Scheduled tasks | `schedule_kind` (at/every/cron), `payload` (JSONB) |
 | `mcp_servers` | MCP server configs | `transport`, `api_key` (encrypted), `tool_prefix` |
 | `custom_tools` | Dynamic tool definitions | `command` (template), `agent_id` (NULL = global), `env` (encrypted) |
+| `cc_projects` | Claude Code projects | `slug` (UNIQUE), `owner_id`, `team_id`, `max_sessions`, `status` |
+| `cc_sessions` | Claude Code sessions | `project_id` (FK), `status`, `pid`, `started_by`, token counts |
+| `cc_session_logs` | Claude Code event logs | `session_id` (FK), `event_type`, `content` (JSONB), `seq` |
 
 ### Migrations
 
@@ -477,6 +486,7 @@ flowchart TD
 | `000003_agent_teams` | `agent_teams`, `agent_team_members`, `team_tasks`, `team_messages` + `team_id` on agent_links |
 | `000004_teams_v2` | FTS on `team_tasks` (tsv column) + `delegation_history` table |
 | `000005_phase4` | `handoff_routes` table |
+| `000010_claude_code` | `cc_projects`, `cc_sessions`, `cc_session_logs` tables + indices |
 
 ### Required PostgreSQL Extensions
 
@@ -556,6 +566,121 @@ All "create or update" operations use `INSERT ... ON CONFLICT DO UPDATE`, ensuri
 
 ---
 
+## 15. Claude Code Store
+
+The Claude Code store manages orchestration of Claude Code CLI processes (managed mode only). It persists project configurations, session metadata, and event logs.
+
+### Tables
+
+| Table | Purpose | Key Columns |
+|-------|---------|-------------|
+| `cc_projects` | Project configurations | `id` (UUID v7), `slug` (UNIQUE), `owner_id`, `team_id` (nullable) |
+| `cc_sessions` | Process sessions | `id` (UUID v7), `project_id` (FK), `status`, `pid` (process ID) |
+| `cc_session_logs` | Event logs | `session_id` (FK), `event_type`, `content` (JSONB), `seq` (order) |
+
+### cc_projects Schema
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | UUID v7 | Primary key |
+| `name` | VARCHAR(255) | Display name |
+| `slug` | VARCHAR(100) | URL-safe identifier (UNIQUE) |
+| `work_dir` | TEXT | Working directory for Claude Code CLI |
+| `description` | TEXT | Project description |
+| `allowed_tools` | JSONB | Array of tool names Claude Code can use |
+| `env_vars` | BYTEA | Encrypted environment variables (AES-256-GCM) |
+| `claude_config` | JSONB | Claude Code config (model, temperature, etc.) |
+| `max_sessions` | INT | Concurrent session limit (default 3) |
+| `owner_id` | VARCHAR(255) | Project owner (user_id) |
+| `team_id` | UUID | Team context (nullable, FK → agent_teams) |
+| `status` | VARCHAR(20) | `active` or `archived` |
+| `created_at` | TIMESTAMPTZ | Creation timestamp |
+| `updated_at` | TIMESTAMPTZ | Last update timestamp |
+
+**Indices:**
+- `idx_cc_projects_owner` on `(owner_id)` WHERE `status = 'active'`
+- `idx_cc_projects_team` on `(team_id)` WHERE `team_id IS NOT NULL AND status = 'active'`
+
+### cc_sessions Schema
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | UUID v7 | Session primary key |
+| `project_id` | UUID | Project ID (FK → cc_projects, CASCADE) |
+| `claude_session_id` | TEXT | Claude Code session ID for --resume |
+| `label` | VARCHAR(500) | User-supplied prompt (first 200 chars) |
+| `status` | VARCHAR(20) | `starting`, `running`, `completed`, `failed`, `stopped` |
+| `pid` | INT | OS process ID (nullable, populated when running) |
+| `started_by` | VARCHAR(255) | User ID who started session |
+| `input_tokens` | BIGINT | Total input tokens used |
+| `output_tokens` | BIGINT | Total output tokens generated |
+| `cost_usd` | NUMERIC(12,6) | Estimated API cost |
+| `error` | TEXT | Error message (nullable) |
+| `started_at` | TIMESTAMPTZ | Session start time |
+| `stopped_at` | TIMESTAMPTZ | Session stop time (nullable) |
+| `created_at` | TIMESTAMPTZ | Record creation time |
+| `updated_at` | TIMESTAMPTZ | Last update time |
+
+**Indices:**
+- `idx_cc_sessions_project` on `(project_id, created_at DESC)`
+- `idx_cc_sessions_status` on `(status)` WHERE `status IN ('starting', 'running')`
+
+### cc_session_logs Schema
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | UUID v7 | Log entry primary key |
+| `session_id` | UUID | Session ID (FK → cc_sessions, CASCADE) |
+| `event_type` | VARCHAR(50) | Event type (chunk, tool.call, tool.result, etc.) |
+| `content` | JSONB | Full parsed stream event |
+| `seq` | INT | Event sequence number (ordering) |
+| `created_at` | TIMESTAMPTZ | Log entry timestamp |
+
+**Indices:**
+- `idx_cc_session_logs_session` on `(session_id, seq)`
+
+### CCStore Interface (15 methods)
+
+**Projects:**
+- `CreateProject(ctx, proj *CCProjectData) error`
+- `GetProject(ctx, id uuid.UUID) (*CCProjectData, error)`
+- `ListProjects(ctx, ownerID string) ([]*CCProjectData, error)`
+- `UpdateProject(ctx, id uuid.UUID, patch map[string]any) error`
+- `DeleteProject(ctx, id uuid.UUID) error`
+
+**Sessions:**
+- `CreateSession(ctx, sess *CCSessionData) error`
+- `GetSession(ctx, id uuid.UUID) (*CCSessionData, error)`
+- `ListSessions(ctx, projectID uuid.UUID) ([]*CCSessionData, error)`
+- `UpdateSessionStatus(ctx, id uuid.UUID, status string) error`
+- `ActiveSessionCount(ctx, projectID uuid.UUID) (int, error)` — Returns count of sessions with status in (starting, running)
+
+**Logs:**
+- `LogEvent(ctx, sessionID uuid.UUID, event *CCSessionLogData) error`
+- `GetSessionLogs(ctx, sessionID uuid.UUID) ([]*CCSessionLogData, error)`
+- `DeleteProjectSessions(ctx, projectID uuid.UUID) error` — Cascade delete sessions + logs
+
+### Session Lifecycle
+
+```
+CreateSession()
+  ↓ (status = "starting")
+UpdateSessionStatus(id, "running")
+  ↓ (status = "running", pid populated)
+LogEvent() [multiple calls as stream events arrive]
+  ↓
+UpdateSessionStatus(id, "completed")
+  ↓ (status = "completed", stopped_at set)
+```
+
+### Access Control
+
+- Projects scoped by `owner_id` (user_id)
+- Team-associated projects accessible to team members via `team_id`
+- HTTP API and WebSocket RPC enforce owner/team membership checks
+
+---
+
 ## File Reference
 
 | File | Purpose |
@@ -596,5 +721,7 @@ All "create or update" operations use `INSERT ... ON CONFLICT DO UPDATE`, ensuri
 | `internal/store/pg/tracing.go` | `PGTracingStore`: traces and spans with batch insert |
 | `internal/store/pg/pool.go` | Connection pool management |
 | `internal/store/pg/helpers.go` | Nullable helpers, JSON helpers, `execMapUpdate()` |
+| `internal/store/pg/claude_code.go` | `PGCCStore`: projects, sessions, logs CRUD |
 | `internal/store/validate.go` | Input validation utilities |
+| `internal/store/cc_store.go` | `CCStore` interface definition |
 | `internal/tools/context_keys.go` | Tool context keys including `WithToolWorkspace` |

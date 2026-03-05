@@ -144,6 +144,19 @@ export const Methods = {
   // Phase 3+ - NICE TO HAVE
   LOGS_TAIL: "logs.tail",
   HEARTBEAT: "heartbeat",
+
+  // Claude Code orchestration
+  CC_PROJECTS_LIST: "cc.projects.list",
+  CC_PROJECTS_CREATE: "cc.projects.create",
+  CC_PROJECTS_GET: "cc.projects.get",
+  CC_PROJECTS_UPDATE: "cc.projects.update",
+  CC_PROJECTS_DELETE: "cc.projects.delete",
+  CC_SESSIONS_LIST: "cc.sessions.list",
+  CC_SESSIONS_START: "cc.sessions.start",
+  CC_SESSIONS_GET: "cc.sessions.get",
+  CC_SESSIONS_PROMPT: "cc.sessions.prompt",
+  CC_SESSIONS_STOP: "cc.sessions.stop",
+  CC_SESSIONS_LOGS: "cc.sessions.logs",
 } as const;
 
 // --- Event names (from pkg/protocol/events.go) ---
@@ -167,6 +180,10 @@ export const Events = {
   HEARTBEAT: "heartbeat",
   TALK_MODE: "talk.mode",
   HANDOFF: "handoff",
+
+  // Claude Code orchestration events
+  CC_OUTPUT: "cc.output",
+  CC_SESSION_STATUS: "cc.session.status",
 } as const;
 
 // Agent event subtypes (in payload.type)
