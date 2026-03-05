@@ -1,15 +1,23 @@
 import { useState, useEffect, useCallback } from "react";
-import { useNavigate } from "react-router";
-import { ArrowLeft, Terminal, Plus, Save, Check, Trash2 } from "lucide-react";
+import { useNavigate, useSearchParams } from "react-router";
+import { ArrowLeft, Terminal, Plus, Save, Check, Trash2, Users } from "lucide-react";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { DeferredSpinner } from "@/components/shared/loading-skeleton";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useClaudeCode } from "./hooks/use-claude-code";
+import { useTeams } from "../teams/hooks/use-teams";
 import { SessionStartDialog } from "./session-start-dialog";
 import { ROUTES } from "@/lib/constants";
 import type { CCProject, CCSession } from "@/types/claude-code";
@@ -111,24 +119,45 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
   onSaved: () => void;
 }) {
   const { updateProject, deleteProject } = useClaudeCode();
+  const { teams, load: loadTeams } = useTeams();
   const [name, setName] = useState(project.name);
+  const [slug, setSlug] = useState(project.slug);
   const [description, setDescription] = useState(project.description ?? "");
   const [workDir, setWorkDir] = useState(project.work_dir);
   const [maxSessions, setMaxSessions] = useState(String(project.max_sessions));
   const [allowedTools, setAllowedTools] = useState((project.allowed_tools ?? []).join(", "));
+  const [teamId, setTeamId] = useState(project.team_id ?? "none");
+  const [status, setStatus] = useState(project.status);
   const [saving, setSaving] = useState(false);
   const [saved, setSaved] = useState(false);
   const [deleteOpen, setDeleteOpen] = useState(false);
 
+  useEffect(() => { loadTeams(); }, [loadTeams]);
+
+  // Detect if form has changes
+  const hasChanges =
+    name.trim() !== project.name ||
+    slug !== project.slug ||
+    (description.trim() || "") !== (project.description ?? "") ||
+    workDir.trim() !== project.work_dir ||
+    (parseInt(maxSessions, 10) || 3) !== project.max_sessions ||
+    allowedTools.trim() !== (project.allowed_tools ?? []).join(", ") ||
+    (teamId === "none" ? undefined : teamId) !== (project.team_id ?? undefined) ||
+    status !== project.status;
+
   const handleSave = async () => {
     setSaving(true);
     try {
+      const resolvedTeamId = teamId === "none" ? null : teamId;
       await updateProject(projectId, {
         name: name.trim(),
+        slug: slug.trim(),
         description: description.trim() || undefined,
         work_dir: workDir.trim(),
         max_sessions: parseInt(maxSessions, 10) || 3,
         allowed_tools: allowedTools.trim() ? allowedTools.split(",").map((t) => t.trim()).filter(Boolean) : [],
+        team_id: resolvedTeamId as string | undefined,
+        status,
       });
       setSaved(true);
       onSaved();
@@ -149,12 +178,46 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
           <Input value={name} onChange={(e) => setName(e.target.value)} />
         </div>
         <div className="space-y-1.5">
+          <Label>Slug</Label>
+          <Input value={slug} onChange={(e) => setSlug(e.target.value)} />
+          <p className="text-xs text-muted-foreground">Lowercase, hyphens only. Used as unique identifier.</p>
+        </div>
+        <div className="space-y-1.5">
           <Label>Description</Label>
           <Textarea value={description} onChange={(e) => setDescription(e.target.value)} rows={2} />
         </div>
         <div className="space-y-1.5">
           <Label>Work Directory</Label>
           <Input value={workDir} onChange={(e) => setWorkDir(e.target.value)} />
+        </div>
+        {teams.length > 0 && (
+          <div className="space-y-1.5">
+            <Label>Team</Label>
+            <Select value={teamId} onValueChange={setTeamId}>
+              <SelectTrigger>
+                <SelectValue placeholder="No team" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="none">No team (personal)</SelectItem>
+                {teams.map((t) => (
+                  <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            <p className="text-xs text-muted-foreground">Assign to a team for shared access.</p>
+          </div>
+        )}
+        <div className="space-y-1.5">
+          <Label>Status</Label>
+          <Select value={status} onValueChange={(v) => setStatus(v as "active" | "archived")}>
+            <SelectTrigger>
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="active">Active</SelectItem>
+              <SelectItem value="archived">Archived</SelectItem>
+            </SelectContent>
+          </Select>
         </div>
         <div className="space-y-1.5">
           <Label>Max Concurrent Sessions</Label>
@@ -166,7 +229,7 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
         </div>
       </div>
 
-      <Button onClick={handleSave} disabled={saving} className="gap-2">
+      <Button onClick={handleSave} disabled={saving || !hasChanges} className="gap-2">
         {saving ? "Saving..." : saved ? <><Check className="h-4 w-4" /> Saved</> : <><Save className="h-4 w-4" /> Save</>}
       </Button>
 
@@ -192,9 +255,14 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
 
 export function ProjectDetailPage({ projectId, onBack }: ProjectDetailPageProps) {
   const { getProject } = useClaudeCode();
+  const { teams, load: loadTeams } = useTeams();
   const [project, setProject] = useState<CCProject | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
+  const [searchParams] = useSearchParams();
+  const defaultTab = searchParams.get("tab") === "settings" ? "settings" : "sessions";
+
+  useEffect(() => { loadTeams(); }, [loadTeams]);
 
   const reload = useCallback(async () => {
     try { setProject(await getProject(projectId)); } catch { /* ignore */ }
@@ -209,6 +277,10 @@ export function ProjectDetailPage({ projectId, onBack }: ProjectDetailPageProps)
       .finally(() => { if (!cancelled) setLoading(false); });
     return () => { cancelled = true; };
   }, [projectId, getProject]);
+
+  const teamName = project?.team_id
+    ? teams.find((t) => t.id === project.team_id)?.name
+    : undefined;
 
   if (loading || !project) {
     return (
@@ -236,6 +308,11 @@ export function ProjectDetailPage({ projectId, onBack }: ProjectDetailPageProps)
             <Badge variant={project.status === "active" ? "success" : "secondary"}>
               {project.status}
             </Badge>
+            {teamName && (
+              <Badge variant="outline" className="gap-1">
+                <Users className="h-3 w-3" /> {teamName}
+              </Badge>
+            )}
           </div>
           <p className="text-sm text-muted-foreground truncate mt-0.5">{project.work_dir}</p>
           {project.description && (
@@ -245,7 +322,7 @@ export function ProjectDetailPage({ projectId, onBack }: ProjectDetailPageProps)
       </div>
 
       <div className="max-w-4xl rounded-xl border bg-card p-3 shadow-sm sm:p-4">
-        <Tabs defaultValue="sessions">
+        <Tabs defaultValue={defaultTab}>
           <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="sessions">Sessions</TabsTrigger>
             <TabsTrigger value="settings">Settings</TabsTrigger>

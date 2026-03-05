@@ -57,4 +57,11 @@ export const queryKeys = {
     all: ["teams"] as const,
     detail: (id: string) => ["teams", id] as const,
   },
+  cc: {
+    projects: ["cc", "projects"] as const,
+    project: (id: string) => ["cc", "projects", id] as const,
+    sessions: (projectId: string) => ["cc", "sessions", projectId] as const,
+    session: (id: string) => ["cc", "session", id] as const,
+    logs: (sessionId: string) => ["cc", "logs", sessionId] as const,
+  },
 };

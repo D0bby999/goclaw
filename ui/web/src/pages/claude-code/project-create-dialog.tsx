@@ -10,10 +10,19 @@ import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import type { TeamData } from "@/types/team";
 
 interface ProjectCreateDialogProps {
   open: boolean;
   onOpenChange: (open: boolean) => void;
+  teams?: TeamData[];
   onCreate: (data: {
     name: string;
     slug: string;
@@ -21,6 +30,7 @@ interface ProjectCreateDialogProps {
     description?: string;
     max_sessions: number;
     allowed_tools?: string[];
+    team_id?: string;
   }) => Promise<void>;
 }
 
@@ -31,13 +41,14 @@ function toSlug(name: string) {
     .replace(/^-+|-+$/g, "");
 }
 
-export function ProjectCreateDialog({ open, onOpenChange, onCreate }: ProjectCreateDialogProps) {
+export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: ProjectCreateDialogProps) {
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [workDir, setWorkDir] = useState("");
   const [description, setDescription] = useState("");
   const [maxSessions, setMaxSessions] = useState("3");
   const [allowedTools, setAllowedTools] = useState("");
+  const [teamId, setTeamId] = useState<string>("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [loading, setLoading] = useState(false);
 
@@ -48,7 +59,7 @@ export function ProjectCreateDialog({ open, onOpenChange, onCreate }: ProjectCre
 
   const reset = () => {
     setName(""); setSlug(""); setWorkDir(""); setDescription("");
-    setMaxSessions("3"); setAllowedTools(""); setSlugEdited(false);
+    setMaxSessions("3"); setAllowedTools(""); setTeamId(""); setSlugEdited(false);
   };
 
   const handleCreate = async () => {
@@ -65,6 +76,7 @@ export function ProjectCreateDialog({ open, onOpenChange, onCreate }: ProjectCre
         description: description.trim() || undefined,
         max_sessions: parseInt(maxSessions, 10) || 3,
         allowed_tools: tools,
+        team_id: teamId && teamId !== "none" ? teamId : undefined,
       });
       reset();
       onOpenChange(false);
@@ -112,6 +124,24 @@ export function ProjectCreateDialog({ open, onOpenChange, onCreate }: ProjectCre
               placeholder="/path/to/project"
             />
           </div>
+
+          {teams && teams.length > 0 && (
+            <div className="space-y-1.5">
+              <Label>Team</Label>
+              <Select value={teamId} onValueChange={setTeamId}>
+                <SelectTrigger>
+                  <SelectValue placeholder="No team (personal)" />
+                </SelectTrigger>
+                <SelectContent>
+                  <SelectItem value="none">No team (personal)</SelectItem>
+                  {teams.map((t) => (
+                    <SelectItem key={t.id} value={t.id}>{t.name}</SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+              <p className="text-xs text-muted-foreground">Assign to a team for shared access.</p>
+            </div>
+          )}
 
           <div className="space-y-1.5">
             <Label htmlFor="cc-desc">Description</Label>

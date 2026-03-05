@@ -49,6 +49,8 @@ export interface StreamEvent {
   input_tokens?: number;
   output_tokens?: number;
   cost_usd?: number;
+  /** Parsed message content for assistant events */
+  message?: { content?: Array<{ type: string; text?: string; name?: string; input?: unknown }> };
 }
 
 export type AgentStatus =
