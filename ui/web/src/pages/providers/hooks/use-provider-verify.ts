@@ -1,5 +1,6 @@
 import { useState, useCallback } from "react";
 import { useHttp } from "@/hooks/use-ws";
+import { OAUTH_PROVIDER_ID } from "./use-providers";
 
 interface VerifyResult {
   valid: boolean;
@@ -13,6 +14,13 @@ export function useProviderVerify() {
 
   const verify = useCallback(
     async (providerId: string, model: string) => {
+      // OAuth provider can't be verified via backend — auto-accept
+      if (providerId === OAUTH_PROVIDER_ID) {
+        const r: VerifyResult = { valid: true };
+        setResult(r);
+        return r;
+      }
+
       setVerifying(true);
       setResult(null);
       try {

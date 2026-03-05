@@ -161,8 +161,12 @@ type ProviderConfig struct {
 	APIBase string `json:"api_base,omitempty"`
 }
 
-// HasAnyProvider returns true if at least one provider has an API key configured.
+// HasAnyProvider returns true if at least one provider has an API key configured
+// or an OAuth token is available.
 func (c *Config) HasAnyProvider() bool {
+	if c.HasOAuthToken {
+		return true
+	}
 	p := c.Providers
 	return p.Anthropic.APIKey != "" ||
 		p.OpenAI.APIKey != "" ||

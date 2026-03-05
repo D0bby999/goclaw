@@ -1,16 +1,32 @@
 import { useQuery } from "@tanstack/react-query";
 import { useHttp } from "@/hooks/use-ws";
 import { queryKeys } from "@/lib/query-keys";
+import { OAUTH_PROVIDER_ID } from "./use-providers";
 import type { ModelInfo } from "@/types/provider";
 
 export type { ModelInfo };
 
+// Hardcoded models for ChatGPT OAuth provider.
+// OAuth token lacks api.model.read scope, so we can't call /v1/models.
+const CODEX_MODELS: ModelInfo[] = [
+  { id: "gpt-5.3-codex", name: "GPT-5.3 Codex" },
+  { id: "gpt-5.3-codex-spark", name: "GPT-5.3 Codex Spark" },
+  { id: "gpt-5.2-codex", name: "GPT-5.2 Codex" },
+  { id: "gpt-5.2", name: "GPT-5.2" },
+  { id: "gpt-5.1-codex-max", name: "GPT-5.1 Codex Max" },
+  { id: "gpt-5.1-codex-mini", name: "GPT-5.1 Codex Mini" },
+  { id: "gpt-5.1-codex", name: "GPT-5.1 Codex" },
+  { id: "gpt-5.1", name: "GPT-5.1" },
+];
+
 export function useProviderModels(providerId: string | undefined) {
   const http = useHttp();
+  const isOAuth = providerId === OAUTH_PROVIDER_ID;
 
   const { data: models = [], isLoading: loading } = useQuery({
     queryKey: queryKeys.providers.models(providerId ?? ""),
     queryFn: async () => {
+      if (isOAuth) return CODEX_MODELS;
       const res = await http.get<{ models: ModelInfo[] }>(
         `/v1/providers/${providerId}/models`,
       );

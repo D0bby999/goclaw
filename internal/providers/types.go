@@ -15,6 +15,11 @@ const (
 	OptThinkingBudget = "thinking_budget"
 )
 
+// TokenSource provides an OAuth access token (with auto-refresh).
+type TokenSource interface {
+	Token() (string, error)
+}
+
 // Provider is the interface all LLM providers must implement.
 type Provider interface {
 	// Chat sends messages to the LLM and returns a response.
