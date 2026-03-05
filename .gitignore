@@ -32,7 +32,12 @@ ui/web/.vite/
 .mcp.json
 tmp
 .claude/
-
+.opencode/
+.repomixignore
+AGENTS.md
+release-manifest.json
+webapp
+docs/application.md
 deploy-*.sh
 
 docs/technical-diaries
