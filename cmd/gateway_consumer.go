@@ -17,6 +17,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/scheduler"
 	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
 // makeSchedulerRunFunc creates the RunFunc for the scheduler.
@@ -41,7 +42,7 @@ func makeSchedulerRunFunc(agents *agent.Router, cfg *config.Config) scheduler.Ru
 // and routes them through the scheduler/agent loop, then publishes the response back.
 // Also handles subagent announcements: routes them through the parent agent's session
 // (matching TS subagent-announce.ts pattern) so the agent can reformulate for the user.
-func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents *agent.Router, cfg *config.Config, sched *scheduler.Scheduler, channelMgr *channels.Manager, teamStore store.TeamStore) {
+func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents *agent.Router, cfg *config.Config, sched *scheduler.Scheduler, channelMgr *channels.Manager, teamStore store.TeamStore, quotaChecker *channels.QuotaChecker, delegateMgr *tools.DelegateManager) {
 	slog.Info("inbound message consumer started")
 
 	// Inbound message deduplication (matching TS src/infra/dedupe.ts + inbound-dedupe.ts).
@@ -66,7 +67,8 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			}
 		}
 
-		if _, err := agents.Get(agentID); err != nil {
+		agentLoop, err := agents.Get(agentID)
+		if err != nil {
 			slog.Warn("inbound: agent not found", "agent", agentID, "channel", msg.Channel)
 			return
 		}
@@ -110,6 +112,28 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 				groupID = guildID
 			}
 			userID = fmt.Sprintf("group:%s:%s", msg.Channel, groupID)
+		}
+
+		// --- Quota check (managed mode only) ---
+		if quotaChecker != nil {
+			qResult := quotaChecker.Check(ctx, userID, msg.Channel, agentLoop.ProviderName())
+			if !qResult.Allowed {
+				slog.Warn("security.quota_exceeded",
+					"user_id", userID,
+					"channel", msg.Channel,
+					"window", qResult.Window,
+					"used", qResult.Used,
+					"limit", qResult.Limit,
+				)
+				msgBus.PublishOutbound(bus.OutboundMessage{
+					Channel:  msg.Channel,
+					ChatID:   msg.ChatID,
+					Content:  formatQuotaExceeded(qResult),
+					Metadata: msg.Metadata,
+				})
+				return
+			}
+			quotaChecker.Increment(userID)
 		}
 
 		slog.Info("inbound: scheduling message (main lane)",
@@ -389,6 +413,10 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			go func(origCh, chatID, senderID, label string, meta map[string]string) {
 				outcome := <-outCh
 				if outcome.Err != nil {
+					if errors.Is(outcome.Err, context.Canceled) {
+						slog.Info("subagent announce: run cancelled", "subagent", senderID)
+						return
+					}
 					slog.Error("subagent announce: agent run failed", "error", outcome.Err)
 					msgBus.PublishOutbound(bus.OutboundMessage{
 						Channel:  origCh,
@@ -496,6 +524,10 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			go func(origCh, chatID, senderID string, meta map[string]string) {
 				outcome := <-outCh
 				if outcome.Err != nil {
+					if errors.Is(outcome.Err, context.Canceled) {
+						slog.Info("delegate announce: run cancelled", "delegation", senderID)
+						return
+					}
 					slog.Error("delegate announce: agent run failed", "error", outcome.Err)
 					msgBus.PublishOutbound(bus.OutboundMessage{
 						Channel:  origCh,
@@ -696,6 +728,13 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			var cancelled bool
 			if cmd == "stopall" {
 				cancelled = sched.CancelSession(sessionKey)
+				// Also cancel async delegations for this chat (they bypass the scheduler)
+				if delegateMgr != nil {
+					dc := delegateMgr.CancelForOrigin(msg.Channel, msg.ChatID)
+					if dc > 0 {
+						cancelled = true
+					}
+				}
 				slog.Info("inbound: /stopall command", "session", sessionKey, "cancelled", cancelled)
 			} else {
 				cancelled = sched.CancelOneSession(sessionKey)

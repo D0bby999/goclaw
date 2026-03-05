@@ -19,7 +19,7 @@ func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore 
 	methods.NewChatMethods(agents, sessStore, isManaged, server.RateLimiter()).Register(router)
 	methods.NewAgentsMethods(agents, cfg, cfgPath, workspace, agentStore, isManaged, contextFileInterceptor).Register(router)
 	methods.NewSessionsMethods(sessStore).Register(router)
-	methods.NewConfigMethods(cfg, cfgPath, isManaged, configSecretsStore).Register(router)
+	methods.NewConfigMethods(cfg, cfgPath, isManaged, configSecretsStore, msgBus).Register(router)
 
 	// Phase 2: Skills (uses SkillStore interface — PG or File)
 	methods.NewSkillsMethods(skillStore).Register(router)
@@ -29,7 +29,7 @@ func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore 
 
 	// Phase 2: Pairing (store created externally, shared with channel manager).
 	// OnApprove callback is set later by the caller after channel manager is created.
-	pairingMethods := methods.NewPairingMethods(pairingStore)
+	pairingMethods := methods.NewPairingMethods(pairingStore, msgBus)
 	pairingMethods.Register(router)
 
 	// Phase 2: Usage (queries SessionStore for real token data)

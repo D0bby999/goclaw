@@ -63,7 +63,7 @@ export function TeamDetailPage({ teamId, onBack }: TeamDetailPageProps) {
 
   if (loading || !team) {
     return (
-      <div className="p-6">
+      <div className="p-4 sm:p-6">
         <Button variant="ghost" onClick={onBack} className="mb-4 gap-1">
           <ArrowLeft className="h-4 w-4" /> Back
         </Button>
@@ -73,7 +73,7 @@ export function TeamDetailPage({ teamId, onBack }: TeamDetailPageProps) {
   }
 
   return (
-    <div className="p-6">
+    <div className="p-4 sm:p-6">
       {/* Header */}
       <div className="mb-6 flex items-start gap-4">
         <Button variant="ghost" size="icon" onClick={onBack} className="mt-0.5 shrink-0">
@@ -105,9 +105,9 @@ export function TeamDetailPage({ teamId, onBack }: TeamDetailPageProps) {
       </div>
 
       {/* Tabs */}
-      <div className="rounded-xl border bg-card p-4 shadow-sm">
+      <div className="max-w-4xl rounded-xl border bg-card p-3 shadow-sm sm:p-4">
         <Tabs defaultValue="members">
-          <TabsList>
+          <TabsList className="w-full justify-start overflow-x-auto">
             <TabsTrigger value="members">Members</TabsTrigger>
             <TabsTrigger value="tasks">Tasks</TabsTrigger>
             <TabsTrigger value="delegations">Delegations</TabsTrigger>

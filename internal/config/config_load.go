@@ -24,6 +24,7 @@ func Default() *Config {
 				MaxTokens:           8192,
 				Temperature:         0.7,
 				MaxToolIterations:   20,
+				MaxToolCalls:        25,
 				ContextWindow:       200000,
 				Subagents: &SubagentsConfig{
 					MaxConcurrent: 20,
@@ -54,6 +55,7 @@ func Default() *Config {
 				Security: "full",
 				Ask:      "off",
 			},
+			RateLimitPerHour: 150,
 		},
 		Sessions: SessionsConfig{
 			Storage: "~/.goclaw/sessions",
@@ -95,6 +97,7 @@ func (c *Config) applyEnvOverrides() {
 	envStr("GOCLAW_ANTHROPIC_API_KEY", &c.Providers.Anthropic.APIKey)
 	envStr("GOCLAW_ANTHROPIC_BASE_URL", &c.Providers.Anthropic.APIBase)
 	envStr("GOCLAW_OPENAI_API_KEY", &c.Providers.OpenAI.APIKey)
+	envStr("GOCLAW_OPENAI_BASE_URL", &c.Providers.OpenAI.APIBase)
 	envStr("GOCLAW_OPENROUTER_API_KEY", &c.Providers.OpenRouter.APIKey)
 	envStr("GOCLAW_GROQ_API_KEY", &c.Providers.Groq.APIKey)
 	envStr("GOCLAW_DEEPSEEK_API_KEY", &c.Providers.DeepSeek.APIKey)
@@ -224,6 +227,12 @@ func (c *Config) applyEnvOverrides() {
 		ensureSandbox()
 		c.Agents.Defaults.Sandbox.NetworkEnabled = v == "true" || v == "1"
 	}
+
+	// Browser (for Docker-compose browser sidecar overlay)
+	envStr("GOCLAW_BROWSER_REMOTE_URL", &c.Tools.Browser.RemoteURL)
+	if c.Tools.Browser.RemoteURL != "" {
+		c.Tools.Browser.Enabled = true
+	}
 }
 
 // applyContextPruningDefaults auto-enables context pruning when the Anthropic
@@ -309,6 +318,9 @@ func (c *Config) ResolveAgent(agentID string) AgentDefaults {
 		}
 		if spec.ContextWindow > 0 {
 			d.ContextWindow = spec.ContextWindow
+		}
+		if spec.MaxToolCalls > 0 {
+			d.MaxToolCalls = spec.MaxToolCalls
 		}
 		if spec.Workspace != "" {
 			d.Workspace = spec.Workspace
