@@ -8,6 +8,7 @@ import {
   Activity,
   BarChart3,
   Radio,
+  Radar,
   Terminal,
   Settings,
   ShieldCheck,
@@ -25,6 +26,7 @@ import { SidebarItem } from "./sidebar-item";
 import { ConnectionStatus } from "./connection-status";
 import { ROUTES } from "@/lib/constants";
 import { cn } from "@/lib/utils";
+import { usePendingPairingsCount } from "@/hooks/use-pending-pairings-count";
 
 interface SidebarProps {
   collapsed: boolean;
@@ -32,6 +34,8 @@ interface SidebarProps {
 }
 
 export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
+  const { pendingCount } = usePendingPairingsCount();
+
   return (
     <aside
       className={cn(
@@ -79,6 +83,7 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
 
         <SidebarGroup label="Monitoring" collapsed={collapsed}>
           <SidebarItem to={ROUTES.TRACES} icon={Activity} label="Traces" collapsed={collapsed} />
+          <SidebarItem to={ROUTES.EVENTS} icon={Radar} label="Realtime Events" collapsed={collapsed} />
           <SidebarItem to={ROUTES.DELEGATIONS} icon={ArrowRightLeft} label="Delegations" collapsed={collapsed} />
           <SidebarItem to={ROUTES.USAGE} icon={BarChart3} label="Usage" collapsed={collapsed} />
           <SidebarItem to={ROUTES.LOGS} icon={Terminal} label="Logs" collapsed={collapsed} />
@@ -88,7 +93,7 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
           <SidebarItem to={ROUTES.PROVIDERS} icon={Cpu} label="Providers" collapsed={collapsed} />
           <SidebarItem to={ROUTES.CONFIG} icon={Settings} label="Config" collapsed={collapsed} />
           <SidebarItem to={ROUTES.APPROVALS} icon={ShieldCheck} label="Approvals" collapsed={collapsed} />
-          <SidebarItem to={ROUTES.NODES} icon={Link} label="Nodes" collapsed={collapsed} />
+          <SidebarItem to={ROUTES.NODES} icon={Link} label="Nodes" collapsed={collapsed} badge={pendingCount} />
           <SidebarItem to={ROUTES.TTS} icon={Volume2} label="TTS" collapsed={collapsed} />
         </SidebarGroup>
       </nav>

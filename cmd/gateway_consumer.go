@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/google/uuid"
@@ -49,6 +50,17 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 	// TTL=20min, max=5000 entries — prevents webhook retries / double-taps from duplicating agent runs.
 	dedupe := bus.NewDedupeCache(20*time.Minute, 5000)
 
+	// Per-session announce serialization: prevents concurrent announce runs from
+	// reading stale session history. Without this, Announce #2 can start while
+	// Announce #1 is still running, read history that doesn't include Announce #1's
+	// messages (written only after agent loop completes), and generate responses
+	// with wrong context (e.g. "waiting for Tiểu La" when Tiểu La already finished).
+	var announceMu sync.Map // sessionKey → *sync.Mutex
+	getAnnounceMu := func(key string) *sync.Mutex {
+		v, _ := announceMu.LoadOrStore(key, &sync.Mutex{})
+		return v.(*sync.Mutex)
+	}
+
 	// processNormalMessage handles routing, scheduling, and response delivery for a single
 	// (possibly merged) inbound message. Called directly by the debouncer's flush callback.
 	processNormalMessage := func(msg bus.InboundMessage) {
@@ -58,7 +70,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			agentID = resolveAgentRoute(cfg, msg.Channel, msg.ChatID, msg.PeerKind)
 		}
 
-		// Check handoff routing override (managed mode only)
+		// Check handoff routing override
 		if teamStore != nil && msg.AgentID == "" {
 			if route, _ := teamStore.GetHandoffRoute(ctx, msg.Channel, msg.ChatID); route != nil {
 				agentID = route.ToAgentKey
@@ -114,7 +126,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			userID = fmt.Sprintf("group:%s:%s", msg.Channel, groupID)
 		}
 
-		// --- Quota check (managed mode only) ---
+		// --- Quota check ---
 		if quotaChecker != nil {
 			qResult := quotaChecker.Check(ctx, userID, msg.Channel, agentLoop.ProviderName())
 			if !qResult.Allowed {
@@ -393,8 +405,8 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			// Build outbound metadata for topic/thread routing.
 			outMeta := buildAnnounceOutMeta(origLocalKey)
 
-			// Schedule through subagent lane
-			outCh := sched.Schedule(ctx, scheduler.LaneSubagent, agent.RunRequest{
+			// Build request before goroutine to capture msg fields.
+			announceReq := agent.RunRequest{
 				SessionKey:       sessionKey,
 				Message:          msg.Content,
 				ForwardMedia:     msg.Media,
@@ -404,13 +416,21 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 				LocalKey:         origLocalKey,
 				UserID:           announceUserID,
 				RunID:            fmt.Sprintf("announce-%s", msg.SenderID),
+				RunKind:          "announce",
 				Stream:           false,
 				ParentTraceID:    parentTraceID,
 				ParentRootSpanID: parentRootSpanID,
-			})
+			}
 
-			// Handle result asynchronously to not block the consumer loop
-			go func(origCh, chatID, senderID, label string, meta map[string]string) {
+			// Handle announce asynchronously with per-session serialization.
+			// The mutex ensures concurrent announces for the same session wait for
+			// each other, so each reads up-to-date session history.
+			go func(sessionKey, origCh, chatID, senderID, label string, meta map[string]string, req agent.RunRequest) {
+				mu := getAnnounceMu(sessionKey)
+				mu.Lock()
+				defer mu.Unlock()
+
+				outCh := sched.Schedule(ctx, scheduler.LaneSubagent, req)
 				outcome := <-outCh
 				if outcome.Err != nil {
 					if errors.Is(outcome.Err, context.Canceled) {
@@ -455,7 +475,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 					})
 				}
 				msgBus.PublishOutbound(outMsg)
-			}(origChannel, msg.ChatID, msg.SenderID, msg.Metadata["subagent_label"], outMeta)
+			}(sessionKey, origChannel, msg.ChatID, msg.SenderID, msg.Metadata["subagent_label"], outMeta, announceReq)
 			continue
 		}
 
@@ -506,7 +526,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			// Build outbound metadata for topic/thread routing.
 			outMeta := buildAnnounceOutMeta(origLocalKey)
 
-			outCh := sched.Schedule(ctx, scheduler.LaneDelegate, agent.RunRequest{
+			announceReq := agent.RunRequest{
 				SessionKey:       sessionKey,
 				Message:          msg.Content,
 				ForwardMedia:     msg.Media,
@@ -516,12 +536,19 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 				LocalKey:         origLocalKey,
 				UserID:           announceUserID,
 				RunID:            fmt.Sprintf("delegate-announce-%s", msg.Metadata["delegation_id"]),
+				RunKind:          "announce",
 				Stream:           false,
 				ParentTraceID:    parentTraceID,
 				ParentRootSpanID: parentRootSpanID,
-			})
+			}
 
-			go func(origCh, chatID, senderID string, meta map[string]string) {
+			// Same per-session serialization as subagent announce above.
+			go func(sessionKey, origCh, chatID, senderID string, meta map[string]string, req agent.RunRequest) {
+				mu := getAnnounceMu(sessionKey)
+				mu.Lock()
+				defer mu.Unlock()
+
+				outCh := sched.Schedule(ctx, scheduler.LaneDelegate, req)
 				outcome := <-outCh
 				if outcome.Err != nil {
 					if errors.Is(outcome.Err, context.Canceled) {
@@ -559,7 +586,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 					})
 				}
 				msgBus.PublishOutbound(outMsg)
-			}(origChannel, msg.ChatID, msg.SenderID, outMeta)
+			}(sessionKey, origChannel, msg.ChatID, msg.SenderID, outMeta, announceReq)
 			continue
 		}
 

@@ -25,8 +25,8 @@ type Channel struct {
 	bot              *telego.Bot
 	config           config.TelegramConfig
 	pairingService   store.PairingStore
-	agentStore       store.AgentStore          // for group file writer management (nil in standalone)
-	teamStore        store.TeamStore           // for /tasks, /task_detail commands (nil in standalone)
+	agentStore       store.AgentStore  // for group file writer management (nil if not configured)
+	teamStore        store.TeamStore   // for /tasks, /task_detail commands (nil if not configured)
 	projectStore     store.ProjectStore        // for project session management (nil if disabled)
 	projectManager   *claudecode.ProcessManager // for project process control (nil if disabled)
 	projectPending   sync.Map         // chatID string → projectID string (waiting for initial prompt)

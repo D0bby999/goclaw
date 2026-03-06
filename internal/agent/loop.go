@@ -28,9 +28,27 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	l.activeRuns.Add(1)
 	defer l.activeRuns.Add(-1)
 
-	l.emit(AgentEvent{Type: protocol.AgentEventRunStarted, AgentID: l.id, RunID: req.RunID})
+	// Per-run emit wrapper: enriches every AgentEvent with delegation + routing context.
+	emitRun := func(event AgentEvent) {
+		event.RunKind = req.RunKind
+		event.DelegationID = req.DelegationID
+		event.TeamID = req.TeamID
+		event.TeamTaskID = req.TeamTaskID
+		event.ParentAgentID = req.ParentAgentID
+		event.UserID = req.UserID
+		event.Channel = req.Channel
+		event.ChatID = req.ChatID
+		l.emit(event)
+	}
 
-	// Create trace (managed mode only)
+	emitRun(AgentEvent{
+		Type:    protocol.AgentEventRunStarted,
+		AgentID: l.id,
+		RunID:   req.RunID,
+		Payload: map[string]interface{}{"message": req.Message},
+	})
+
+	// Create trace
 	var traceID uuid.UUID
 	isChildTrace := req.ParentTraceID != uuid.Nil && l.traceCollector != nil
 
@@ -98,7 +116,7 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 	}
 
 	if err != nil {
-		l.emit(AgentEvent{
+		emitRun(AgentEvent{
 			Type:    protocol.AgentEventRunFailed,
 			AgentID: l.id,
 			RunID:   req.RunID,
@@ -119,7 +137,12 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 		return nil, err
 	}
 
-	l.emit(AgentEvent{Type: protocol.AgentEventRunCompleted, AgentID: l.id, RunID: req.RunID})
+	emitRun(AgentEvent{
+		Type:    protocol.AgentEventRunCompleted,
+		AgentID: l.id,
+		RunID:   req.RunID,
+		Payload: map[string]interface{}{"content": result.Content},
+	})
 	if !isChildTrace && l.traceCollector != nil && traceID != uuid.Nil {
 		l.traceCollector.FinishTrace(ctx, traceID, store.TraceStatusCompleted, "", truncateStr(result.Content, 500))
 	}
@@ -127,7 +150,20 @@ func (l *Loop) Run(ctx context.Context, req RunRequest) (*RunResult, error) {
 }
 
 func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) {
-	// Inject agent UUID into context for tool routing (managed mode)
+	// Per-run emit wrapper: enriches every AgentEvent with delegation + routing context.
+	emitRun := func(event AgentEvent) {
+		event.RunKind = req.RunKind
+		event.DelegationID = req.DelegationID
+		event.TeamID = req.TeamID
+		event.TeamTaskID = req.TeamTaskID
+		event.ParentAgentID = req.ParentAgentID
+		event.UserID = req.UserID
+		event.Channel = req.Channel
+		event.ChatID = req.ChatID
+		l.emit(event)
+	}
+
+	// Inject agent UUID into context for tool routing
 	if l.agentUUID != uuid.Nil {
 		ctx = store.WithAgentID(ctx, l.agentUUID)
 	}
@@ -135,7 +171,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 	if req.UserID != "" {
 		ctx = store.WithUserID(ctx, req.UserID)
 	}
-	// Inject agent type into context for interceptor routing (managed mode)
+	// Inject agent type into context for interceptor routing
 	if l.agentType != "" {
 		ctx = store.WithAgentType(ctx, l.agentType)
 	}
@@ -164,7 +200,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		cachedWs, loaded := l.userWorkspaces.Load(req.UserID)
 		if !loaded {
 			// First request for this user: get/create profile → returns stored workspace.
-			// Also seeds per-user context files on first chat (managed mode).
+			// Also seeds per-user context files on first chat.
 			ws := l.workspace
 			if l.ensureUserFiles != nil {
 				var err error
@@ -222,7 +258,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		}
 	}
 
-	// Inject agent key into context for tool-level resolution (managed mode: multiple agents share tool registry)
+	// Inject agent key into context for tool-level resolution (multiple agents share tool registry)
 	ctx = tools.WithToolAgentKey(ctx, l.id)
 
 	// Security: truncate oversized user messages gracefully (feed truncation notice into LLM)
@@ -254,7 +290,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 
 	// buildMessages resolves context files once and also detects BOOTSTRAP.md presence
 	// (hadBootstrap) — no extra DB roundtrip needed for bootstrap detection.
-	messages, hadBootstrap := l.buildMessages(ctx, history, summary, req.Message, req.ExtraSystemPrompt, req.SessionKey, req.Channel, req.UserID, req.HistoryLimit, req.SkillFilter)
+	messages, hadBootstrap := l.buildMessages(ctx, history, summary, req.Message, req.ExtraSystemPrompt, req.SessionKey, req.Channel, req.PeerKind, req.UserID, req.HistoryLimit, req.SkillFilter)
 
 	// 2. Attach vision images to the current user message (last in messages slice).
 	// Images are only attached to the live request, NOT persisted in session history.
@@ -346,7 +382,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 
 	// Inject retry hook so channels can update placeholder on LLM retries.
 	ctx = providers.WithRetryHook(ctx, func(attempt, maxAttempts int, err error) {
-		l.emit(AgentEvent{
+		emitRun(AgentEvent{
 			Type:    protocol.AgentEventRunRetrying,
 			AgentID: l.id,
 			RunID:   req.RunID,
@@ -408,7 +444,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		if req.Stream {
 			resp, err = l.provider.ChatStream(ctx, chatReq, func(chunk providers.StreamChunk) {
 				if chunk.Thinking != "" {
-					l.emit(AgentEvent{
+					emitRun(AgentEvent{
 						Type:    protocol.ChatEventThinking,
 						AgentID: l.id,
 						RunID:   req.RunID,
@@ -416,7 +452,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 					})
 				}
 				if chunk.Content != "" {
-					l.emit(AgentEvent{
+					emitRun(AgentEvent{
 						Type:    protocol.ChatEventChunk,
 						AgentID: l.id,
 						RunID:   req.RunID,
@@ -434,6 +470,26 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		}
 
 		l.emitLLMSpan(ctx, llmSpanStart, iteration, messages, resp, nil)
+
+		// For non-streaming responses, emit thinking and content as single events
+		if !req.Stream {
+			if resp.Thinking != "" {
+				emitRun(AgentEvent{
+					Type:    protocol.ChatEventThinking,
+					AgentID: l.id,
+					RunID:   req.RunID,
+					Payload: map[string]string{"content": resp.Thinking},
+				})
+			}
+			if resp.Content != "" {
+				emitRun(AgentEvent{
+					Type:    protocol.ChatEventChunk,
+					AgentID: l.id,
+					RunID:   req.RunID,
+					Payload: map[string]string{"content": resp.Content},
+				})
+			}
+		}
 
 		if resp.Usage != nil {
 			totalUsage.PromptTokens += resp.Usage.PromptTokens
@@ -547,11 +603,11 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		if len(resp.ToolCalls) == 1 {
 			// Single tool: sequential — no goroutine overhead
 			tc := resp.ToolCalls[0]
-			l.emit(AgentEvent{
+			emitRun(AgentEvent{
 				Type:    protocol.AgentEventToolCall,
 				AgentID: l.id,
 				RunID:   req.RunID,
-				Payload: map[string]interface{}{"name": tc.Name, "id": tc.ID},
+				Payload: map[string]interface{}{"name": tc.Name, "id": tc.ID, "arguments": tc.Arguments},
 			})
 
 			argsJSON, _ := json.Marshal(tc.Arguments)
@@ -592,7 +648,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 				}
 			}
 
-			l.emit(AgentEvent{
+			emitRun(AgentEvent{
 				Type:    protocol.AgentEventToolResult,
 				AgentID: l.id,
 				RunID:   req.RunID,
@@ -647,11 +703,11 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 
 			// 1. Emit all tool.call events upfront (client sees all calls starting)
 			for _, tc := range resp.ToolCalls {
-				l.emit(AgentEvent{
+				emitRun(AgentEvent{
 					Type:    protocol.AgentEventToolCall,
 					AgentID: l.id,
 					RunID:   req.RunID,
-					Payload: map[string]interface{}{"name": tc.Name, "id": tc.ID},
+					Payload: map[string]interface{}{"name": tc.Name, "id": tc.ID, "arguments": tc.Arguments},
 				})
 			}
 
@@ -719,7 +775,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 					}
 				}
 
-				l.emit(AgentEvent{
+				emitRun(AgentEvent{
 					Type:    protocol.AgentEventToolResult,
 					AgentID: l.id,
 					RunID:   req.RunID,
@@ -769,6 +825,9 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 
 	// 4. Full sanitization pipeline (matching TS extractAssistantText + sanitizeUserFacingText)
 	finalContent = SanitizeAssistantContent(finalContent)
+
+	// 4b. Config leak detection (predefined agents only)
+	finalContent = StripConfigLeak(finalContent, l.agentType)
 
 	// 5. Handle NO_REPLY: save to session for context but mark as silent.
 	// Matching TS: NO_REPLY is saved (via resolveSilentReplyFallbackText) but

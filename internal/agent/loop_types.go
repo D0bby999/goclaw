@@ -22,11 +22,11 @@ import (
 // Bootstrap typically completes in 2-3 conversation turns.
 const bootstrapAutoCleanupTurns = 3
 
-// EnsureUserFilesFunc seeds per-user context files on first chat (managed mode).
+// EnsureUserFilesFunc seeds per-user context files on first chat.
 // Returns the effective workspace path (from user_agent_profiles) for caching.
 type EnsureUserFilesFunc func(ctx context.Context, agentID uuid.UUID, userID, agentType, workspace, channel string) (effectiveWorkspace string, err error)
 
-// ContextFileLoaderFunc loads context files dynamically per-request (managed mode).
+// ContextFileLoaderFunc loads context files dynamically per-request.
 type ContextFileLoaderFunc func(ctx context.Context, agentID uuid.UUID, userID, agentType string) []bootstrap.ContextFile
 
 // BootstrapCleanupFunc removes BOOTSTRAP.md after a successful first run.
@@ -37,8 +37,8 @@ type BootstrapCleanupFunc func(ctx context.Context, agentID uuid.UUID, userID st
 // Think → Act → Observe cycle with tool execution.
 type Loop struct {
 	id            string
-	agentUUID     uuid.UUID // set in managed mode for context propagation
-	agentType     string    // "open" or "predefined" (managed mode)
+	agentUUID     uuid.UUID // set for context propagation
+	agentType     string    // "open" or "predefined"
 	provider      providers.Provider
 	model         string
 	contextWindow int
@@ -63,7 +63,7 @@ type Loop struct {
 	hasMemory      bool
 	contextFiles   []bootstrap.ContextFile
 
-	// Per-user file seeding + dynamic context loading (managed mode)
+	// Per-user file seeding + dynamic context loading
 	ensureUserFiles    EnsureUserFilesFunc
 	contextFileLoader  ContextFileLoaderFunc
 	bootstrapCleanup   BootstrapCleanupFunc
@@ -83,7 +83,7 @@ type Loop struct {
 	// Event callback for broadcasting agent events (run.started, chunk, tool.call, etc.)
 	onEvent func(event AgentEvent)
 
-	// Tracing collector (nil in standalone mode)
+	// Tracing collector (nil if not configured)
 	traceCollector *tracing.Collector
 
 	// Security: input scanning and message size limit
@@ -91,16 +91,16 @@ type Loop struct {
 	injectionAction string // "log", "warn" (default), "block", "off"
 	maxMessageChars int    // 0 = use default (32000)
 
-	// Global builtin tool settings (from builtin_tools table, managed mode)
+	// Global builtin tool settings (from builtin_tools table)
 	builtinToolSettings tools.BuiltinToolSettings
 
 	// Thinking level for extended thinking support
 	thinkingLevel string
 
-	// Group writer cache for system prompt injection (managed mode)
+	// Group writer cache for system prompt injection
 	groupWriterCache *store.GroupWriterCache
 
-	// Team store for cross-session pending task detection (managed mode)
+	// Team store for cross-session pending task detection
 	teamStore store.TeamStore
 }
 
@@ -109,7 +109,19 @@ type AgentEvent struct {
 	Type    string      `json:"type"`    // "run.started", "run.completed", "run.failed", "chunk", "tool.call", "tool.result"
 	AgentID string      `json:"agentId"`
 	RunID   string      `json:"runId"`
+	RunKind string      `json:"runKind,omitempty"` // "delegation", "announce" — omitted for user-initiated runs
 	Payload interface{} `json:"payload,omitempty"`
+
+	// Delegation context (omitempty — only present when agent runs inside a delegation)
+	DelegationID  string `json:"delegationId,omitempty"`
+	TeamID        string `json:"teamId,omitempty"`
+	TeamTaskID    string `json:"teamTaskId,omitempty"`
+	ParentAgentID string `json:"parentAgentId,omitempty"`
+
+	// Routing context (helps WS clients filter by user/channel)
+	UserID  string `json:"userId,omitempty"`
+	Channel string `json:"channel,omitempty"`
+	ChatID  string `json:"chatId,omitempty"`
 }
 
 // LoopConfig configures a new Loop.
@@ -146,11 +158,11 @@ type LoopConfig struct {
 	SandboxContainerDir   string // e.g. "/workspace"
 	SandboxWorkspaceAccess string // "none", "ro", "rw"
 
-	// Managed mode: agent UUID for context propagation to tools
+	// Agent UUID for context propagation to tools
 	AgentUUID uuid.UUID
-	AgentType string // "open" or "predefined" (managed mode)
+	AgentType string // "open" or "predefined"
 
-	// Per-user file seeding + dynamic context loading (managed mode)
+	// Per-user file seeding + dynamic context loading
 	EnsureUserFiles   EnsureUserFilesFunc
 	ContextFileLoader ContextFileLoaderFunc
 	BootstrapCleanup  BootstrapCleanupFunc
@@ -163,16 +175,16 @@ type LoopConfig struct {
 	InjectionAction string         // "log", "warn" (default), "block", "off"
 	MaxMessageChars int            // 0 = use default (32000)
 
-	// Global builtin tool settings (from builtin_tools table, managed mode)
+	// Global builtin tool settings (from builtin_tools table)
 	BuiltinToolSettings tools.BuiltinToolSettings
 
 	// Thinking level: "off", "low", "medium", "high" (from agent other_config)
 	ThinkingLevel string
 
-	// Group writer cache for system prompt injection (managed mode)
+	// Group writer cache for system prompt injection
 	GroupWriterCache *store.GroupWriterCache
 
-	// Team store for cross-session pending task detection (managed mode)
+	// Team store for cross-session pending task detection
 	TeamStore store.TeamStore
 }
 
@@ -262,6 +274,15 @@ type RunRequest struct {
 	TraceName        string    // override trace name (default: "chat <agentID>")
 	TraceTags        []string  // additional tags for the trace (e.g. "cron")
 	MaxIterations    int       // per-request override (0 = use agent default, must be lower)
+
+	// Run classification
+	RunKind string // "delegation", "announce" — empty for user-initiated runs
+
+	// Delegation context (set when running as a delegate agent)
+	DelegationID  string // delegation ID for event correlation
+	TeamID        string // team ID (if delegation is team-scoped)
+	TeamTaskID    string // team task ID (if delegation has an associated task)
+	ParentAgentID string // parent agent key that initiated the delegation
 }
 
 // RunResult is the output of a completed agent run.

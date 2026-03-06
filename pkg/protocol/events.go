@@ -17,7 +17,6 @@ const (
 	EventDevicePairRes      = "device.pair.resolved"
 	EventVoicewakeChanged   = "voicewake.changed"
 	EventConnectChallenge   = "connect.challenge"
-	EventHeartbeat          = "heartbeat"
 	EventTalkMode           = "talk.mode"
 
 	// Agent summoning events (predefined agent setup via LLM).
@@ -32,6 +31,30 @@ const (
 	EventTeamMessageSent     = "team.message.sent"
 	EventDelegationStarted   = "delegation.started"
 	EventDelegationCompleted = "delegation.completed"
+
+	// Delegation lifecycle events.
+	EventDelegationFailed      = "delegation.failed"
+	EventDelegationCancelled   = "delegation.cancelled"
+	EventDelegationProgress    = "delegation.progress"
+	EventDelegationAccumulated = "delegation.accumulated"
+	EventDelegationAnnounce    = "delegation.announce"
+	EventQualityGateRetry      = "delegation.quality_gate.retry"
+
+	// Team task lifecycle events.
+	EventTeamTaskClaimed   = "team.task.claimed"
+	EventTeamTaskCancelled = "team.task.cancelled"
+
+	// Team CRUD events (admin operations).
+	EventTeamCreated       = "team.created"
+	EventTeamUpdated       = "team.updated"
+	EventTeamDeleted       = "team.deleted"
+	EventTeamMemberAdded   = "team.member.added"
+	EventTeamMemberRemoved = "team.member.removed"
+
+	// Agent link events (admin operations).
+	EventAgentLinkCreated = "agent_link.created"
+	EventAgentLinkUpdated = "agent_link.updated"
+	EventAgentLinkDeleted = "agent_link.deleted"
 
 	// Project events (real-time output streaming).
 	EventProjectOutput        = "project.output"

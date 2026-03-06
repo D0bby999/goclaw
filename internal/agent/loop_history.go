@@ -18,7 +18,7 @@ import (
 // buildMessages constructs the full message list for an LLM request.
 // Returns the messages and whether BOOTSTRAP.md was present in context files
 // (used by the caller for auto-cleanup without an extra DB roundtrip).
-func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, summary, userMessage, extraSystemPrompt, sessionKey, channel, userID string, historyLimit int, skillFilter []string) ([]providers.Message, bool) {
+func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, summary, userMessage, extraSystemPrompt, sessionKey, channel, peerKind, userID string, historyLimit int, skillFilter []string) ([]providers.Message, bool) {
 	var messages []providers.Message
 
 	// Build full system prompt using the new builder (matching TS buildAgentSystemPrompt)
@@ -30,7 +30,7 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 	_, hasSpawn := l.tools.Get("spawn")
 	_, hasSkillSearch := l.tools.Get("skill_search")
 
-	// Per-user workspace: show the user's subdirectory in the system prompt (managed mode).
+	// Per-user workspace: show the user's subdirectory in the system prompt.
 	// Uses cached workspace from user_agent_profiles (includes channel isolation).
 	promptWorkspace := l.workspace
 	if l.agentUUID != uuid.Nil && userID != "" && l.workspace != "" {
@@ -51,7 +51,7 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		}
 	}
 
-	// Group writer restrictions: filter context files + inject prompt (managed mode only)
+	// Group writer restrictions: filter context files + inject prompt
 	if l.groupWriterCache != nil && strings.HasPrefix(userID, "group:") {
 		senderID := store.SenderIDFromContext(ctx)
 		writerPrompt, filtered := l.buildGroupWriterPrompt(ctx, userID, senderID, contextFiles)
@@ -69,6 +69,7 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		Model:                  l.model,
 		Workspace:              promptWorkspace,
 		Channel:                channel,
+		PeerKind:               peerKind,
 		OwnerIDs:               l.ownerIDs,
 		Mode:                   mode,
 		ToolNames:              l.tools.List(),
@@ -77,6 +78,7 @@ func (l *Loop) buildMessages(ctx context.Context, history []providers.Message, s
 		HasSpawn:               l.tools != nil && hasSpawn,
 		HasSkillSearch:         hasSkillSearch,
 		ContextFiles:           contextFiles,
+		AgentType:              l.agentType,
 		ExtraPrompt:            extraSystemPrompt,
 		SandboxEnabled:         l.sandboxEnabled,
 		SandboxContainerDir:    l.sandboxContainerDir,
