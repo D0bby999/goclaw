@@ -21,5 +21,5 @@ type Stores struct {
 	AgentLinks       AgentLinkStore       // nil in standalone mode
 	Teams            TeamStore            // nil in standalone mode
 	BuiltinTools     BuiltinToolStore     // nil in standalone mode
-	CC               CCStore              // nil in standalone mode
+	Projects         ProjectStore         // nil in standalone mode
 }

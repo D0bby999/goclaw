@@ -145,18 +145,20 @@ export const Methods = {
   LOGS_TAIL: "logs.tail",
   HEARTBEAT: "heartbeat",
 
-  // Claude Code orchestration
-  CC_PROJECTS_LIST: "cc.projects.list",
-  CC_PROJECTS_CREATE: "cc.projects.create",
-  CC_PROJECTS_GET: "cc.projects.get",
-  CC_PROJECTS_UPDATE: "cc.projects.update",
-  CC_PROJECTS_DELETE: "cc.projects.delete",
-  CC_SESSIONS_LIST: "cc.sessions.list",
-  CC_SESSIONS_START: "cc.sessions.start",
-  CC_SESSIONS_GET: "cc.sessions.get",
-  CC_SESSIONS_PROMPT: "cc.sessions.prompt",
-  CC_SESSIONS_STOP: "cc.sessions.stop",
-  CC_SESSIONS_LOGS: "cc.sessions.logs",
+  // Projects orchestration
+  PROJECTS_LIST: "projects.list",
+  PROJECTS_CREATE: "projects.create",
+  PROJECTS_GET: "projects.get",
+  PROJECTS_UPDATE: "projects.update",
+  PROJECTS_DELETE: "projects.delete",
+  PROJECT_SESSIONS_LIST: "projects.sessions.list",
+  PROJECT_SESSIONS_START: "projects.sessions.start",
+  PROJECT_SESSIONS_GET: "projects.sessions.get",
+  PROJECT_SESSIONS_PROMPT: "projects.sessions.prompt",
+  PROJECT_SESSIONS_STOP: "projects.sessions.stop",
+  PROJECT_SESSIONS_DELETE: "projects.sessions.delete",
+  PROJECT_SESSIONS_UPDATE: "projects.sessions.update",
+  PROJECT_SESSIONS_LOGS: "projects.sessions.logs",
 } as const;
 
 // --- Event names (from pkg/protocol/events.go) ---
@@ -181,9 +183,9 @@ export const Events = {
   TALK_MODE: "talk.mode",
   HANDOFF: "handoff",
 
-  // Claude Code orchestration events
-  CC_OUTPUT: "cc.output",
-  CC_SESSION_STATUS: "cc.session.status",
+  // Projects orchestration events
+  PROJECT_OUTPUT: "project.output",
+  PROJECT_SESSION_STATUS: "project.session.status",
 } as const;
 
 // Agent event subtypes (in payload.type)

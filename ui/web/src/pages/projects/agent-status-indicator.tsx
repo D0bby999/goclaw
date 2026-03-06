@@ -1,6 +1,6 @@
 import { Eye, Code, Terminal, Search, CheckCircle, XCircle, PauseCircle, Pencil } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { AgentStatus } from "@/types/claude-code";
+import type { AgentStatus } from "@/types/project";
 
 interface AgentStatusIndicatorProps {
   status: AgentStatus;

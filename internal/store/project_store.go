@@ -8,23 +8,23 @@ import (
 	"github.com/google/uuid"
 )
 
-// CC project status constants.
+// Project status constants.
 const (
-	CCProjectStatusActive   = "active"
-	CCProjectStatusArchived = "archived"
+	ProjectStatusActive   = "active"
+	ProjectStatusArchived = "archived"
 )
 
-// CC session status constants.
+// Project session status constants.
 const (
-	CCSessionStatusStarting  = "starting"
-	CCSessionStatusRunning   = "running"
-	CCSessionStatusStopped   = "stopped"
-	CCSessionStatusFailed    = "failed"
-	CCSessionStatusCompleted = "completed"
+	ProjectSessionStatusStarting  = "starting"
+	ProjectSessionStatusRunning   = "running"
+	ProjectSessionStatusStopped   = "stopped"
+	ProjectSessionStatusFailed    = "failed"
+	ProjectSessionStatusCompleted = "completed"
 )
 
-// CCProjectData represents a Claude Code project.
-type CCProjectData struct {
+// ProjectData represents a project.
+type ProjectData struct {
 	BaseModel
 	Name         string          `json:"name"`
 	Slug         string          `json:"slug"`
@@ -38,8 +38,8 @@ type CCProjectData struct {
 	Status       string          `json:"status"`
 }
 
-// CCSessionData represents a Claude Code session.
-type CCSessionData struct {
+// ProjectSessionData represents a project session.
+type ProjectSessionData struct {
 	BaseModel
 	ProjectID       uuid.UUID  `json:"project_id"`
 	ClaudeSessionID *string    `json:"claude_session_id,omitempty"`
@@ -58,8 +58,8 @@ type CCSessionData struct {
 	ProjectSlug string `json:"project_slug,omitempty"`
 }
 
-// CCSessionLogData represents a log entry from Claude Code stream output.
-type CCSessionLogData struct {
+// ProjectSessionLogData represents a log entry from session stream output.
+type ProjectSessionLogData struct {
 	ID        uuid.UUID       `json:"id"`
 	SessionID uuid.UUID       `json:"session_id"`
 	EventType string          `json:"event_type"`
@@ -68,25 +68,26 @@ type CCSessionLogData struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
-// CCStore manages Claude Code projects, sessions, and logs.
-type CCStore interface {
+// ProjectStore manages projects, sessions, and logs.
+type ProjectStore interface {
 	// Projects
-	CreateProject(ctx context.Context, p *CCProjectData) error
-	GetProject(ctx context.Context, id uuid.UUID) (*CCProjectData, error)
-	GetProjectBySlug(ctx context.Context, slug string) (*CCProjectData, error)
+	CreateProject(ctx context.Context, p *ProjectData) error
+	GetProject(ctx context.Context, id uuid.UUID) (*ProjectData, error)
+	GetProjectBySlug(ctx context.Context, slug string) (*ProjectData, error)
 	UpdateProject(ctx context.Context, id uuid.UUID, updates map[string]any) error
 	DeleteProject(ctx context.Context, id uuid.UUID) error
-	ListProjects(ctx context.Context, ownerID string) ([]CCProjectData, error)
-	ListProjectsByTeam(ctx context.Context, teamID uuid.UUID) ([]CCProjectData, error)
+	ListProjects(ctx context.Context, ownerID string) ([]ProjectData, error)
+	ListProjectsByTeam(ctx context.Context, teamID uuid.UUID) ([]ProjectData, error)
 
 	// Sessions
-	CreateSession(ctx context.Context, s *CCSessionData) error
-	GetSession(ctx context.Context, id uuid.UUID) (*CCSessionData, error)
+	CreateSession(ctx context.Context, s *ProjectSessionData) error
+	GetSession(ctx context.Context, id uuid.UUID) (*ProjectSessionData, error)
 	UpdateSession(ctx context.Context, id uuid.UUID, updates map[string]any) error
-	ListSessions(ctx context.Context, projectID uuid.UUID, limit, offset int) ([]CCSessionData, int, error)
+	DeleteSession(ctx context.Context, id uuid.UUID) error
+	ListSessions(ctx context.Context, projectID uuid.UUID, limit, offset int) ([]ProjectSessionData, int, error)
 	ActiveSessionCount(ctx context.Context, projectID uuid.UUID) (int, error)
 
 	// Logs
-	AppendLog(ctx context.Context, log *CCSessionLogData) error
-	GetLogs(ctx context.Context, sessionID uuid.UUID, afterSeq, limit int) ([]CCSessionLogData, error)
+	AppendLog(ctx context.Context, log *ProjectSessionLogData) error
+	GetLogs(ctx context.Context, sessionID uuid.UUID, afterSeq, limit int) ([]ProjectSessionLogData, error)
 }

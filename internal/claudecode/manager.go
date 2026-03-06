@@ -34,11 +34,11 @@ type ManagedProcess struct {
 type ProcessManager struct {
 	processes map[uuid.UUID]*ManagedProcess
 	mu        sync.RWMutex
-	store     store.CCStore
+	store     store.ProjectStore
 	eventCB   EventCallback
 }
 
-func NewProcessManager(ccStore store.CCStore, eventCB EventCallback) *ProcessManager {
+func NewProcessManager(ccStore store.ProjectStore, eventCB EventCallback) *ProcessManager {
 	return &ProcessManager{
 		processes: make(map[uuid.UUID]*ManagedProcess),
 		store:     ccStore,
@@ -67,10 +67,10 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 	}
 
 	// Create session record
-	sess := &store.CCSessionData{
+	sess := &store.ProjectSessionData{
 		ProjectID: opts.ProjectID,
 		Label:     opts.Prompt,
-		Status:    store.CCSessionStatusStarting,
+		Status:    store.ProjectSessionStatusStarting,
 		StartedBy: startedBy,
 	}
 	if len(opts.Prompt) > 200 {
@@ -91,14 +91,24 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 		}
 	}
 
-	// Build command args
-	args := buildCLIArgs(opts)
+	if err := m.spawnAndWatch(ctx, sess.ID, opts.ProjectID, opts, workDir); err != nil {
+		return uuid.Nil, err
+	}
 
+	slog.Info("cc: process started", "session_id", sess.ID, "project", proj.Name)
+	return sess.ID, nil
+}
+
+// spawnAndWatch starts a claude CLI process and watches its stdout for stream events.
+// Shared by Start (new session) and SendPrompt (resume in same session).
+func (m *ProcessManager) spawnAndWatch(ctx context.Context, sessionID, projectID uuid.UUID, opts StartOpts, workDir string) error {
 	// Prepend scope hint to prompt if set
 	prompt := opts.Prompt
 	if opts.Scope != "" {
 		prompt = fmt.Sprintf("IMPORTANT: Focus only on files matching: %s. Do not modify files outside this scope.\n\n%s", opts.Scope, prompt)
 	}
+
+	args := buildCLIArgs(opts)
 
 	// Use Background so the child process outlives the HTTP request context
 	procCtx, cancel := context.WithCancel(context.Background())
@@ -113,31 +123,31 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
-		return uuid.Nil, fmt.Errorf("stdout pipe: %w", err)
+		return fmt.Errorf("stdout pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
 		cancel()
-		return uuid.Nil, fmt.Errorf("start claude: %w", err)
+		return fmt.Errorf("start claude: %w", err)
 	}
 
-	// Update session with PID
+	// Update session with PID + running status
 	pid := cmd.Process.Pid
-	_ = m.store.UpdateSession(ctx, sess.ID, map[string]any{
-		"status": store.CCSessionStatusRunning,
+	_ = m.store.UpdateSession(ctx, sessionID, map[string]any{
+		"status": store.ProjectSessionStatusRunning,
 		"pid":    pid,
 	})
 
 	mp := &ManagedProcess{
 		cmd:       cmd,
 		cancel:    cancel,
-		sessionID: sess.ID,
-		projectID: opts.ProjectID,
+		sessionID: sessionID,
+		projectID: projectID,
 		done:      make(chan struct{}),
 	}
 
 	m.mu.Lock()
-	m.processes[sess.ID] = mp
+	m.processes[sessionID] = mp
 	m.mu.Unlock()
 
 	// Reader goroutine: parse stream-json lines
@@ -145,13 +155,12 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 		defer close(mp.done)
 		defer func() {
 			m.mu.Lock()
-			delete(m.processes, sess.ID)
+			delete(m.processes, sessionID)
 			m.mu.Unlock()
 		}()
 
 		scanner := bufio.NewScanner(stdout)
 		scanner.Buffer(make([]byte, 0, 1024*1024), 1024*1024) // 1MB buffer
-		var claudeSessionID string
 
 		for scanner.Scan() {
 			line := scanner.Bytes()
@@ -167,45 +176,32 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 
 			// Capture claude session_id from init event
 			if event.Type == "system" && event.Subtype == "init" && event.SessionID != "" {
-				claudeSessionID = event.SessionID
-				_ = m.store.UpdateSession(context.Background(), sess.ID, map[string]any{
-					"claude_session_id": claudeSessionID,
+				_ = m.store.UpdateSession(context.Background(), sessionID, map[string]any{
+					"claude_session_id": event.SessionID,
 				})
 			}
 
-			// Update tokens/cost from result events
+			// Accumulate tokens/cost from result events
 			if event.Type == "result" {
-				updates := map[string]any{
-					"input_tokens":  event.InputTokens,
-					"output_tokens": event.OutputTokens,
-					"cost_usd":      event.CostUSD,
-				}
-				if event.Subtype == "success" {
-					updates["status"] = store.CCSessionStatusCompleted
-					updates["stopped_at"] = time.Now().UTC()
-				} else if event.Subtype == "error" {
-					updates["status"] = store.CCSessionStatusFailed
-					updates["stopped_at"] = time.Now().UTC()
-				}
-				_ = m.store.UpdateSession(context.Background(), sess.ID, updates)
+				m.accumulateResult(sessionID, event)
 			}
 
 			// Forward event to callback
 			if m.eventCB != nil {
-				m.eventCB(sess.ID, event)
+				m.eventCB(sessionID, event)
 			}
 		}
 
 		// Wait for process to exit
 		waitErr := cmd.Wait()
-		finalStatus := store.CCSessionStatusCompleted
+		finalStatus := store.ProjectSessionStatusCompleted
 		var errStr *string
 		if waitErr != nil {
-			finalStatus = store.CCSessionStatusFailed
+			finalStatus = store.ProjectSessionStatusFailed
 			s := waitErr.Error()
 			if stderr := stderrBuf.String(); stderr != "" {
 				s += ": " + stderr
-				slog.Warn("cc: process stderr", "session_id", sess.ID, "stderr", stderr)
+				slog.Warn("cc: process stderr", "session_id", sessionID, "stderr", stderr)
 			}
 			errStr = &s
 		}
@@ -215,18 +211,40 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 			"pid":        nil,
 		}
 		// Only override status if not already set by result event
-		currentSess, getErr := m.store.GetSession(context.Background(), sess.ID)
-		if getErr == nil && currentSess.Status == store.CCSessionStatusRunning {
+		currentSess, getErr := m.store.GetSession(context.Background(), sessionID)
+		if getErr == nil && currentSess.Status == store.ProjectSessionStatusRunning {
 			updates["status"] = finalStatus
 			if errStr != nil {
 				updates["error"] = *errStr
 			}
 		}
-		_ = m.store.UpdateSession(context.Background(), sess.ID, updates)
+		_ = m.store.UpdateSession(context.Background(), sessionID, updates)
 	}()
 
-	slog.Info("cc: process started", "session_id", sess.ID, "project", proj.Name, "pid", pid)
-	return sess.ID, nil
+	return nil
+}
+
+// accumulateResult adds token/cost from a result event to the session's running totals.
+func (m *ProcessManager) accumulateResult(sessionID uuid.UUID, event StreamEvent) {
+	sess, err := m.store.GetSession(context.Background(), sessionID)
+	if err != nil {
+		slog.Warn("cc: failed to read session for token accumulation", "error", err)
+		return
+	}
+
+	updates := map[string]any{
+		"input_tokens":  sess.InputTokens + int64(event.InputTokens),
+		"output_tokens": sess.OutputTokens + int64(event.OutputTokens),
+		"cost_usd":      sess.CostUSD + event.CostUSD,
+	}
+	if event.Subtype == "success" {
+		updates["status"] = store.ProjectSessionStatusCompleted
+		updates["stopped_at"] = time.Now().UTC()
+	} else if event.Subtype == "error" {
+		updates["status"] = store.ProjectSessionStatusFailed
+		updates["stopped_at"] = time.Now().UTC()
+	}
+	_ = m.store.UpdateSession(context.Background(), sessionID, updates)
 }
 
 // Stop sends SIGTERM to a running process, waits up to 10s, then SIGKILL.
@@ -256,12 +274,26 @@ func (m *ProcessManager) Stop(ctx context.Context, sessionID uuid.UUID) error {
 	}
 
 	_ = m.store.UpdateSession(ctx, sessionID, map[string]any{
-		"status":     store.CCSessionStatusStopped,
+		"status":     store.ProjectSessionStatusStopped,
 		"stopped_at": time.Now().UTC(),
 		"pid":        nil,
 	})
 
 	slog.Info("cc: process stopped", "session_id", sessionID)
+	return nil
+}
+
+// Delete stops a running session (if any) and removes it from the store.
+func (m *ProcessManager) Delete(ctx context.Context, sessionID uuid.UUID) error {
+	if m.IsRunning(sessionID) {
+		if err := m.Stop(ctx, sessionID); err != nil {
+			slog.Warn("cc: stop before delete failed", "error", err)
+		}
+	}
+	if err := m.store.DeleteSession(ctx, sessionID); err != nil {
+		return fmt.Errorf("delete session: %w", err)
+	}
+	slog.Info("cc: session deleted", "session_id", sessionID)
 	return nil
 }
 
@@ -279,18 +311,17 @@ func (m *ProcessManager) StopAll() {
 	}
 }
 
-// SendPrompt sends a follow-up prompt by stopping the current process and restarting with --resume.
-// SendPrompt sends a follow-up prompt by stopping the current process and restarting with --resume.
-// Returns the new session ID so callers can redirect to it.
-func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, prompt string) (uuid.UUID, error) {
+// SendPrompt sends a follow-up prompt to an existing session using --resume.
+// Reuses the same session ID — no new session is created.
+func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, prompt string) error {
 	sess, err := m.store.GetSession(ctx, sessionID)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("get session: %w", err)
+		return fmt.Errorf("get session: %w", err)
 	}
 
 	proj, err := m.store.GetProject(ctx, sess.ProjectID)
 	if err != nil {
-		return uuid.Nil, fmt.Errorf("get project: %w", err)
+		return fmt.Errorf("get project: %w", err)
 	}
 
 	// Stop current process if running
@@ -305,7 +336,7 @@ func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, pr
 		resumeID = *sess.ClaudeSessionID
 	}
 	if resumeID == "" {
-		return uuid.Nil, fmt.Errorf("no claude session_id to resume")
+		return fmt.Errorf("no claude session_id to resume")
 	}
 
 	// Parse allowed tools from project
@@ -314,8 +345,7 @@ func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, pr
 		_ = json.Unmarshal(proj.AllowedTools, &allowedTools)
 	}
 
-	// Start new process with --resume
-	newOpts := StartOpts{
+	opts := StartOpts{
 		ProjectID:    sess.ProjectID,
 		WorkDir:      proj.WorkDir,
 		Prompt:       prompt,
@@ -323,17 +353,12 @@ func (m *ProcessManager) SendPrompt(ctx context.Context, sessionID uuid.UUID, pr
 		AllowedTools: allowedTools,
 	}
 
-	newID, err := m.Start(ctx, newOpts, sess.StartedBy)
-	if err != nil {
-		return uuid.Nil, fmt.Errorf("restart with resume: %w", err)
+	if err := m.spawnAndWatch(ctx, sessionID, sess.ProjectID, opts, proj.WorkDir); err != nil {
+		return fmt.Errorf("resume: %w", err)
 	}
 
-	// Link new session to old claude_session_id
-	_ = m.store.UpdateSession(ctx, newID, map[string]any{
-		"claude_session_id": resumeID,
-	})
-
-	return newID, nil
+	slog.Info("cc: resumed session", "session_id", sessionID)
+	return nil
 }
 
 // IsRunning returns true if the session has an active process.

@@ -6,6 +6,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
+	"github.com/nextlevelbuilder/goclaw/internal/claudecode"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
@@ -39,9 +40,25 @@ func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 // FactoryWithStores returns a ChannelFactory that includes agent and team stores
 // for group file writer management and /tasks, /task_detail commands.
 func FactoryWithStores(agentStore store.AgentStore, teamStore store.TeamStore) channels.ChannelFactory {
+	return FactoryWithStoresAndProjects(agentStore, teamStore, nil, nil)
+}
+
+// FactoryWithStoresAndProjects returns a ChannelFactory that includes agent, team, and project stores.
+func FactoryWithStoresAndProjects(agentStore store.AgentStore, teamStore store.TeamStore,
+	projectStore store.ProjectStore, projectManager any) channels.ChannelFactory {
 	return func(name string, creds json.RawMessage, cfg json.RawMessage,
 		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
-		return buildChannel(name, creds, cfg, msgBus, pairingSvc, agentStore, teamStore)
+		ch, err := buildChannel(name, creds, cfg, msgBus, pairingSvc, agentStore, teamStore)
+		if err != nil {
+			return nil, err
+		}
+		// Inject project services if provided
+		if projectStore != nil && projectManager != nil {
+			if tg, ok := ch.(*Channel); ok {
+				tg.SetProjectServices(projectStore, projectManager.(*claudecode.ProcessManager))
+			}
+		}
+		return ch, nil
 	}
 }
 

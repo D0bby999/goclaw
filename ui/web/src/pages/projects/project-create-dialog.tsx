@@ -31,8 +31,18 @@ interface ProjectCreateDialogProps {
     max_sessions: number;
     allowed_tools?: string[];
     team_id?: string;
+    claude_config?: Record<string, unknown>;
   }) => Promise<void>;
 }
+
+const KNOWN_TOOLS = ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "WebSearch", "WebFetch", "Agent"];
+
+const MODEL_OPTIONS = [
+  { value: "", label: "Default (auto)" },
+  { value: "claude-sonnet-4-5-20250514", label: "claude-sonnet-4-5-20250514" },
+  { value: "claude-opus-4-5-20250414", label: "claude-opus-4-5-20250414" },
+  { value: "claude-haiku-4-5-20251001", label: "claude-haiku-4-5-20251001" },
+];
 
 function toSlug(name: string) {
   return name
@@ -47,7 +57,9 @@ export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: Pro
   const [workDir, setWorkDir] = useState("");
   const [description, setDescription] = useState("");
   const [maxSessions, setMaxSessions] = useState("3");
-  const [allowedTools, setAllowedTools] = useState("");
+  const [checkedTools, setCheckedTools] = useState<Set<string>>(new Set());
+  const [extraTools, setExtraTools] = useState("");
+  const [model, setModel] = useState("");
   const [teamId, setTeamId] = useState<string>("");
   const [slugEdited, setSlugEdited] = useState(false);
   const [loading, setLoading] = useState(false);
@@ -57,26 +69,38 @@ export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: Pro
     if (!slugEdited) setSlug(toSlug(name));
   }, [name, slugEdited]);
 
+  const toggleTool = (tool: string) => {
+    setCheckedTools((prev) => {
+      const next = new Set(prev);
+      if (next.has(tool)) next.delete(tool);
+      else next.add(tool);
+      return next;
+    });
+  };
+
   const reset = () => {
     setName(""); setSlug(""); setWorkDir(""); setDescription("");
-    setMaxSessions("3"); setAllowedTools(""); setTeamId(""); setSlugEdited(false);
+    setMaxSessions("3"); setCheckedTools(new Set()); setExtraTools("");
+    setModel(""); setTeamId(""); setSlugEdited(false);
   };
 
   const handleCreate = async () => {
     if (!name.trim() || !workDir.trim()) return;
     setLoading(true);
     try {
-      const tools = allowedTools.trim()
-        ? allowedTools.split(",").map((t) => t.trim()).filter(Boolean)
-        : undefined;
+      const knownSelected = KNOWN_TOOLS.filter((t) => checkedTools.has(t));
+      const extraList = extraTools.split(",").map((t) => t.trim()).filter(Boolean);
+      const tools = [...knownSelected, ...extraList];
+
       await onCreate({
         name: name.trim(),
         slug: slug || toSlug(name),
         work_dir: workDir.trim(),
         description: description.trim() || undefined,
         max_sessions: parseInt(maxSessions, 10) || 3,
-        allowed_tools: tools,
+        allowed_tools: tools.length > 0 ? tools : undefined,
         team_id: teamId && teamId !== "none" ? teamId : undefined,
+        claude_config: model ? { model } : undefined,
       });
       reset();
       onOpenChange(false);
@@ -96,9 +120,9 @@ export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: Pro
 
         <div className="space-y-4 py-2 overflow-y-auto min-h-0">
           <div className="space-y-1.5">
-            <Label htmlFor="cc-name">Name *</Label>
+            <Label htmlFor="proj-name">Name *</Label>
             <Input
-              id="cc-name"
+              id="proj-name"
               value={name}
               onChange={(e) => setName(e.target.value)}
               placeholder="e.g. My App"
@@ -106,9 +130,9 @@ export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: Pro
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="cc-slug">Slug</Label>
+            <Label htmlFor="proj-slug">Slug</Label>
             <Input
-              id="cc-slug"
+              id="proj-slug"
               value={slug}
               onChange={(e) => { setSlug(e.target.value); setSlugEdited(true); }}
               placeholder="my-app"
@@ -116,9 +140,9 @@ export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: Pro
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="cc-workdir">Work Directory *</Label>
+            <Label htmlFor="proj-workdir">Work Directory *</Label>
             <Input
-              id="cc-workdir"
+              id="proj-workdir"
               value={workDir}
               onChange={(e) => setWorkDir(e.target.value)}
               placeholder="/path/to/project"
@@ -144,9 +168,9 @@ export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: Pro
           )}
 
           <div className="space-y-1.5">
-            <Label htmlFor="cc-desc">Description</Label>
+            <Label htmlFor="proj-desc">Description</Label>
             <Textarea
-              id="cc-desc"
+              id="proj-desc"
               value={description}
               onChange={(e) => setDescription(e.target.value)}
               placeholder="Optional description..."
@@ -155,9 +179,9 @@ export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: Pro
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="cc-max">Max Concurrent Sessions</Label>
+            <Label htmlFor="proj-max">Max Concurrent Sessions</Label>
             <Input
-              id="cc-max"
+              id="proj-max"
               type="number"
               min={1}
               max={20}
@@ -167,14 +191,41 @@ export function ProjectCreateDialog({ open, onOpenChange, teams, onCreate }: Pro
           </div>
 
           <div className="space-y-1.5">
-            <Label htmlFor="cc-tools">Allowed Tools (comma-separated)</Label>
+            <Label>Default Model</Label>
+            <Select value={model} onValueChange={setModel}>
+              <SelectTrigger>
+                <SelectValue placeholder="Default (auto)" />
+              </SelectTrigger>
+              <SelectContent>
+                {MODEL_OPTIONS.map((opt) => (
+                  <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+
+          <div className="space-y-1.5">
+            <Label>Allowed Tools</Label>
+            <div className="grid grid-cols-3 gap-1.5">
+              {KNOWN_TOOLS.map((tool) => (
+                <label key={tool} className="flex items-center gap-1.5 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    checked={checkedTools.has(tool)}
+                    onChange={() => toggleTool(tool)}
+                    className="h-3.5 w-3.5 rounded border-input accent-primary"
+                  />
+                  <span className="text-sm">{tool}</span>
+                </label>
+              ))}
+            </div>
             <Input
-              id="cc-tools"
-              value={allowedTools}
-              onChange={(e) => setAllowedTools(e.target.value)}
-              placeholder="Read,Edit,Bash,Glob"
+              value={extraTools}
+              onChange={(e) => setExtraTools(e.target.value)}
+              placeholder="Additional tools (comma-separated)"
+              className="text-sm"
             />
-            <p className="text-xs text-muted-foreground">Leave empty to allow all tools.</p>
+            <p className="text-xs text-muted-foreground">Leave all unchecked to allow all tools.</p>
           </div>
         </div>
 

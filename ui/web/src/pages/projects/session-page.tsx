@@ -7,7 +7,7 @@ export function SessionPage() {
   const navigate = useNavigate();
 
   if (!id) {
-    navigate(ROUTES.CC_PROJECTS, { replace: true });
+    navigate(ROUTES.PROJECTS, { replace: true });
     return null;
   }
 

@@ -644,7 +644,8 @@ func runGateway() {
 	// for immediate cache invalidation on agents.files.set.
 	var contextFileInterceptor *tools.ContextFileInterceptor
 	var delegateMgr *tools.DelegateManager
-	var ccManagerForShutdown *ccpkg.ProcessManager
+	var projectManagerForShutdown *ccpkg.ProcessManager
+	var projectStoreForChannels store.ProjectStore
 
 	// Managed mode: set agent store for tools_invoke context injection + wire extras
 	if managedStores != nil && managedStores.Agents != nil {
@@ -696,34 +697,35 @@ func runGateway() {
 			applyBuiltinToolDisables(context.Background(), managedStores.BuiltinTools, toolsReg)
 		}
 
-		// Claude Code orchestration (managed mode only)
-		if managedStores.CC != nil {
-			ccEventCB := func(sessionID uuid.UUID, event ccpkg.StreamEvent) {
+		// Projects orchestration (managed mode only)
+		if managedStores.Projects != nil {
+			projectEventCB := func(sessionID uuid.UUID, event ccpkg.StreamEvent) {
 				// Persist log
-				_ = managedStores.CC.AppendLog(context.Background(), &store.CCSessionLogData{
+				_ = managedStores.Projects.AppendLog(context.Background(), &store.ProjectSessionLogData{
 					SessionID: sessionID,
 					EventType: event.Type,
 					Content:   event.Raw,
 				})
 				// Broadcast to WS clients
 				msgBus.Broadcast(bus.Event{
-					Name: protocol.EventCCOutput,
+					Name: protocol.EventProjectOutput,
 					Payload: map[string]interface{}{
 						"session_id": sessionID,
 						"event":      event,
 					},
 				})
 			}
-			ccManager := ccpkg.NewProcessManager(managedStores.CC, ccEventCB)
-			ccHandler := httpapi.NewClaudeCodeHandler(managedStores.CC, ccManager, cfg.Gateway.Token, msgBus, permPE.IsOwner)
-			server.SetClaudeCodeHandler(ccHandler)
+			projectManager := ccpkg.NewProcessManager(managedStores.Projects, projectEventCB)
+			projectsHandler := httpapi.NewProjectsHandler(managedStores.Projects, projectManager, cfg.Gateway.Token, msgBus, permPE.IsOwner)
+			server.SetProjectsHandler(projectsHandler)
 
 			// Register WS RPC methods
-			methods.NewClaudeCodeMethods(managedStores.CC, ccManager, msgBus).Register(server.Router())
+			methods.NewProjectsMethods(managedStores.Projects, projectManager, msgBus).Register(server.Router())
 
-			// StopAll is called in the shutdown block below (after ctx is created)
-			ccManagerForShutdown = ccManager
-			slog.Info("managed mode: claude code orchestration enabled")
+			// Store for channel injection
+			projectManagerForShutdown = projectManager
+			projectStoreForChannels = managedStores.Projects
+			slog.Info("managed mode: projects orchestration enabled")
 		}
 	}
 
@@ -767,7 +769,12 @@ func runGateway() {
 	var instanceLoader *channels.InstanceLoader
 	if managedStores != nil && managedStores.ChannelInstances != nil {
 		instanceLoader = channels.NewInstanceLoader(managedStores.ChannelInstances, managedStores.Agents, channelMgr, msgBus, pairingStore)
-		instanceLoader.RegisterFactory("telegram", telegram.FactoryWithStores(managedStores.Agents, managedStores.Teams))
+		// Use projects-enabled factory if project manager is available
+		if projectManagerForShutdown != nil && projectStoreForChannels != nil {
+			instanceLoader.RegisterFactory("telegram", telegram.FactoryWithStoresAndProjects(managedStores.Agents, managedStores.Teams, projectStoreForChannels, projectManagerForShutdown))
+		} else {
+			instanceLoader.RegisterFactory("telegram", telegram.FactoryWithStores(managedStores.Agents, managedStores.Teams))
+		}
 		instanceLoader.RegisterFactory("discord", discord.Factory)
 		instanceLoader.RegisterFactory("feishu", feishu.Factory)
 		instanceLoader.RegisterFactory("zalo_oa", zalo.Factory)
@@ -1096,10 +1103,10 @@ func runGateway() {
 			heartbeatSvc.Stop()
 		}
 
-		// Stop Claude Code processes
-		if ccManagerForShutdown != nil {
-			slog.Info("stopping Claude Code processes...")
-			ccManagerForShutdown.StopAll()
+		// Stop project session processes
+		if projectManagerForShutdown != nil {
+			slog.Info("stopping project session processes...")
+			projectManagerForShutdown.StopAll()
 		}
 
 		// Stop sandbox pruning + release containers

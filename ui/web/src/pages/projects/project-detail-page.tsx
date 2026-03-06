@@ -16,52 +16,146 @@ import {
 } from "@/components/ui/select";
 import { DeferredSpinner } from "@/components/shared/loading-skeleton";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
-import { useClaudeCode } from "./hooks/use-claude-code";
+import { useProjects } from "./hooks/use-projects";
 import { useTeams } from "../teams/hooks/use-teams";
 import { SessionStartDialog } from "./session-start-dialog";
 import { ROUTES } from "@/lib/constants";
-import type { CCProject, CCSession } from "@/types/claude-code";
+import type { Project, ProjectSession } from "@/types/project";
 
 interface ProjectDetailPageProps {
   projectId: string;
   onBack: () => void;
 }
 
-function SessionRow({ session, onClick }: { session: CCSession; onClick: () => void }) {
+const KNOWN_TOOLS = ["Read", "Edit", "Write", "Bash", "Glob", "Grep", "WebSearch", "WebFetch", "Agent"];
+
+const MODEL_OPTIONS = [
+  { value: "", label: "Default (auto)" },
+  { value: "claude-sonnet-4-5-20250514", label: "claude-sonnet-4-5-20250514" },
+  { value: "claude-opus-4-5-20250414", label: "claude-opus-4-5-20250414" },
+  { value: "claude-haiku-4-5-20251001", label: "claude-haiku-4-5-20251001" },
+];
+
+/** Parse allowed_tools into checked known tools + extra string */
+function parseAllowedTools(tools: string[]): { checked: Set<string>; extra: string } {
+  const checked = new Set<string>();
+  const extra: string[] = [];
+  for (const t of tools) {
+    if (KNOWN_TOOLS.includes(t)) checked.add(t);
+    else extra.push(t);
+  }
+  return { checked, extra: extra.join(", ") };
+}
+
+/** Build allowed_tools array from checked set + extra string */
+function buildAllowedTools(checked: Set<string>, extra: string): string[] {
+  const extraList = extra.split(",").map((t) => t.trim()).filter(Boolean);
+  return [...KNOWN_TOOLS.filter((t) => checked.has(t)), ...extraList];
+}
+
+interface ToolsInputProps {
+  tools: string[];
+  onChange: (tools: string[]) => void;
+}
+
+function ToolsInput({ tools, onChange }: ToolsInputProps) {
+  const { checked, extra } = parseAllowedTools(tools);
+  const [extraInput, setExtraInput] = useState(extra);
+
+  const toggleTool = (tool: string) => {
+    const next = new Set(checked);
+    if (next.has(tool)) next.delete(tool);
+    else next.add(tool);
+    onChange(buildAllowedTools(next, extraInput));
+  };
+
+  const handleExtraChange = (val: string) => {
+    setExtraInput(val);
+    onChange(buildAllowedTools(checked, val));
+  };
+
+  return (
+    <div className="space-y-2">
+      <div className="grid grid-cols-3 gap-1.5">
+        {KNOWN_TOOLS.map((tool) => (
+          <label key={tool} className="flex items-center gap-1.5 cursor-pointer select-none">
+            <input
+              type="checkbox"
+              checked={checked.has(tool)}
+              onChange={() => toggleTool(tool)}
+              className="h-3.5 w-3.5 rounded border-input accent-primary"
+            />
+            <span className="text-sm">{tool}</span>
+          </label>
+        ))}
+      </div>
+      <Input
+        value={extraInput}
+        onChange={(e) => handleExtraChange(e.target.value)}
+        placeholder="Additional tools (comma-separated)"
+        className="text-sm"
+      />
+      <p className="text-xs text-muted-foreground">Leave all unchecked to allow all tools.</p>
+    </div>
+  );
+}
+
+function SessionRow({
+  session,
+  onClick,
+  onDelete,
+}: {
+  session: ProjectSession;
+  onClick: () => void;
+  onDelete: (e: React.MouseEvent) => void;
+}) {
   const statusColor: Record<string, string> = {
     running: "success", starting: "success", stopped: "secondary",
     completed: "secondary", failed: "destructive",
   };
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="flex items-center gap-3 w-full rounded-lg border p-3 text-left hover:border-primary/30 hover:bg-muted/30 transition-all"
-    >
-      <div className="min-w-0 flex-1">
-        <div className="flex items-center gap-2">
-          <span className="text-sm font-medium truncate">
-            {session.label ?? session.id.slice(0, 12)}
-          </span>
-          <Badge variant={(statusColor[session.status] as "success" | "secondary" | "destructive") ?? "secondary"} className="text-[11px] shrink-0">
-            {session.status}
-          </Badge>
+    <div className="flex items-center gap-2 w-full rounded-lg border p-3 hover:border-primary/30 hover:bg-muted/30 transition-all">
+      <button
+        type="button"
+        onClick={onClick}
+        className="flex items-center gap-3 min-w-0 flex-1 text-left"
+      >
+        <div className="min-w-0 flex-1">
+          <div className="flex items-center gap-2">
+            <span className="text-sm font-medium truncate">
+              {session.label ?? session.id.slice(0, 12)}
+            </span>
+            <Badge variant={(statusColor[session.status] as "success" | "secondary" | "destructive") ?? "secondary"} className="text-[11px] shrink-0">
+              {session.status}
+            </Badge>
+          </div>
+          <p className="text-xs text-muted-foreground mt-0.5">
+            {new Date(session.started_at).toLocaleString()}
+            {session.cost_usd > 0 && ` · $${session.cost_usd.toFixed(4)}`}
+          </p>
         </div>
-        <p className="text-xs text-muted-foreground mt-0.5">
-          {new Date(session.started_at).toLocaleString()}
-          {session.cost_usd > 0 && ` · $${session.cost_usd.toFixed(4)}`}
-        </p>
-      </div>
-      <Terminal className="h-4 w-4 text-muted-foreground shrink-0" />
-    </button>
+        <Terminal className="h-4 w-4 text-muted-foreground shrink-0" />
+      </button>
+      <button
+        type="button"
+        onClick={onDelete}
+        title="Delete session"
+        className="p-1.5 rounded text-muted-foreground hover:text-destructive hover:bg-destructive/10 transition-colors shrink-0"
+      >
+        <Trash2 className="h-3.5 w-3.5" />
+      </button>
+    </div>
   );
 }
 
-function SessionsTab({ project, projectId }: { project: CCProject; projectId: string }) {
+type SessionStatusFilter = "all" | "running" | "completed" | "failed" | "stopped";
+
+function SessionsTab({ project, projectId }: { project: Project; projectId: string }) {
   const navigate = useNavigate();
-  const { listSessions, startSession } = useClaudeCode();
-  const [sessions, setSessions] = useState<CCSession[]>([]);
+  const { listSessions, startSession, deleteSession } = useProjects();
+  const [sessions, setSessions] = useState<ProjectSession[]>([]);
   const [startOpen, setStartOpen] = useState(false);
+  const [statusFilter, setStatusFilter] = useState<SessionStatusFilter>("all");
 
   const reload = useCallback(async () => {
     try { setSessions(await listSessions(projectId)); } catch { /* ignore */ }
@@ -72,11 +166,35 @@ function SessionsTab({ project, projectId }: { project: CCProject; projectId: st
   const handleStart = async (prompt: string, label?: string) => {
     const s = await startSession(projectId, prompt, label);
     await reload();
-    navigate(ROUTES.CC_SESSION.replace(":id", s.id));
+    navigate(ROUTES.PROJECTS_SESSION.replace(":id", s.id));
+  };
+
+  const handleDelete = async (e: React.MouseEvent, sessionId: string) => {
+    e.stopPropagation();
+    if (!window.confirm("Delete this session? This cannot be undone.")) return;
+    try {
+      await deleteSession(sessionId);
+      await reload();
+    } catch { /* toast shown by hook */ }
   };
 
   const activeSessions = sessions.filter((s) => s.status === "running" || s.status === "starting").length;
   const canStart = activeSessions < project.max_sessions;
+
+  const filterOptions: { value: SessionStatusFilter; label: string }[] = [
+    { value: "all", label: "All" },
+    { value: "running", label: "Running" },
+    { value: "completed", label: "Completed" },
+    { value: "failed", label: "Failed" },
+    { value: "stopped", label: "Stopped" },
+  ];
+
+  const filtered = statusFilter === "all"
+    ? sessions
+    : sessions.filter((s) => {
+        if (statusFilter === "running") return s.status === "running" || s.status === "starting";
+        return s.status === statusFilter;
+      });
 
   return (
     <div className="space-y-3">
@@ -89,15 +207,45 @@ function SessionsTab({ project, projectId }: { project: CCProject; projectId: st
         </Button>
       </div>
 
-      {sessions.length === 0 ? (
-        <p className="text-sm text-muted-foreground py-6 text-center">No sessions yet. Start one!</p>
+      {sessions.length > 0 && (
+        <div className="flex items-center gap-1.5 flex-wrap">
+          {filterOptions.map((opt) => {
+            const count = opt.value === "all"
+              ? sessions.length
+              : sessions.filter((s) => {
+                  if (opt.value === "running") return s.status === "running" || s.status === "starting";
+                  return s.status === opt.value;
+                }).length;
+            return (
+              <button
+                key={opt.value}
+                type="button"
+                onClick={() => setStatusFilter(opt.value)}
+                className={`px-2.5 py-1 rounded-full text-xs font-medium transition-colors ${
+                  statusFilter === opt.value
+                    ? "bg-primary text-primary-foreground"
+                    : "bg-muted text-muted-foreground hover:bg-muted/80"
+                }`}
+              >
+                {opt.label} {count > 0 && `(${count})`}
+              </button>
+            );
+          })}
+        </div>
+      )}
+
+      {filtered.length === 0 ? (
+        <p className="text-sm text-muted-foreground py-6 text-center">
+          {sessions.length === 0 ? "No sessions yet. Start one!" : "No sessions match the filter."}
+        </p>
       ) : (
         <div className="space-y-2">
-          {sessions.map((s) => (
+          {filtered.map((s) => (
             <SessionRow
               key={s.id}
               session={s}
-              onClick={() => navigate(ROUTES.CC_SESSION.replace(":id", s.id))}
+              onClick={() => navigate(ROUTES.PROJECTS_SESSION.replace(":id", s.id))}
+              onDelete={(e) => handleDelete(e, s.id)}
             />
           ))}
         </div>
@@ -114,18 +262,19 @@ function SessionsTab({ project, projectId }: { project: CCProject; projectId: st
 
 function SettingsTab({ projectId, project, onDeleted, onSaved }: {
   projectId: string;
-  project: CCProject;
+  project: Project;
   onDeleted: () => void;
   onSaved: () => void;
 }) {
-  const { updateProject, deleteProject } = useClaudeCode();
+  const { updateProject, deleteProject } = useProjects();
   const { teams, load: loadTeams } = useTeams();
   const [name, setName] = useState(project.name);
   const [slug, setSlug] = useState(project.slug);
   const [description, setDescription] = useState(project.description ?? "");
   const [workDir, setWorkDir] = useState(project.work_dir);
   const [maxSessions, setMaxSessions] = useState(String(project.max_sessions));
-  const [allowedTools, setAllowedTools] = useState((project.allowed_tools ?? []).join(", "));
+  const [allowedTools, setAllowedTools] = useState<string[]>(project.allowed_tools ?? []);
+  const [model, setModel] = useState<string>((project.claude_config?.model as string) ?? "");
   const [teamId, setTeamId] = useState(project.team_id ?? "none");
   const [status, setStatus] = useState(project.status);
   const [saving, setSaving] = useState(false);
@@ -134,14 +283,14 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
 
   useEffect(() => { loadTeams(); }, [loadTeams]);
 
-  // Detect if form has changes
   const hasChanges =
     name.trim() !== project.name ||
     slug !== project.slug ||
     (description.trim() || "") !== (project.description ?? "") ||
     workDir.trim() !== project.work_dir ||
     (parseInt(maxSessions, 10) || 3) !== project.max_sessions ||
-    allowedTools.trim() !== (project.allowed_tools ?? []).join(", ") ||
+    JSON.stringify(allowedTools.slice().sort()) !== JSON.stringify((project.allowed_tools ?? []).slice().sort()) ||
+    model !== ((project.claude_config?.model as string) ?? "") ||
     (teamId === "none" ? undefined : teamId) !== (project.team_id ?? undefined) ||
     status !== project.status;
 
@@ -149,15 +298,23 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
     setSaving(true);
     try {
       const resolvedTeamId = teamId === "none" ? null : teamId;
+      const claudeConfig = model
+        ? { ...(project.claude_config ?? {}), model }
+        : (() => {
+            const cfg = { ...(project.claude_config ?? {}) };
+            delete cfg.model;
+            return cfg;
+          })();
       await updateProject(projectId, {
         name: name.trim(),
         slug: slug.trim(),
         description: description.trim() || undefined,
         work_dir: workDir.trim(),
         max_sessions: parseInt(maxSessions, 10) || 3,
-        allowed_tools: allowedTools.trim() ? allowedTools.split(",").map((t) => t.trim()).filter(Boolean) : [],
+        allowed_tools: allowedTools,
         team_id: resolvedTeamId as string | undefined,
         status,
+        claude_config: claudeConfig,
       });
       setSaved(true);
       onSaved();
@@ -189,6 +346,19 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
         <div className="space-y-1.5">
           <Label>Work Directory</Label>
           <Input value={workDir} onChange={(e) => setWorkDir(e.target.value)} />
+        </div>
+        <div className="space-y-1.5">
+          <Label>Default Model</Label>
+          <Select value={model} onValueChange={setModel}>
+            <SelectTrigger>
+              <SelectValue placeholder="Default (auto)" />
+            </SelectTrigger>
+            <SelectContent>
+              {MODEL_OPTIONS.map((opt) => (
+                <SelectItem key={opt.value} value={opt.value}>{opt.label}</SelectItem>
+              ))}
+            </SelectContent>
+          </Select>
         </div>
         {teams.length > 0 && (
           <div className="space-y-1.5">
@@ -224,8 +394,8 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
           <Input type="number" min={1} max={20} value={maxSessions} onChange={(e) => setMaxSessions(e.target.value)} />
         </div>
         <div className="space-y-1.5">
-          <Label>Allowed Tools (comma-separated)</Label>
-          <Input value={allowedTools} onChange={(e) => setAllowedTools(e.target.value)} placeholder="Read,Edit,Bash" />
+          <Label>Allowed Tools</Label>
+          <ToolsInput tools={allowedTools} onChange={setAllowedTools} />
         </div>
       </div>
 
@@ -254,9 +424,9 @@ function SettingsTab({ projectId, project, onDeleted, onSaved }: {
 }
 
 export function ProjectDetailPage({ projectId, onBack }: ProjectDetailPageProps) {
-  const { getProject } = useClaudeCode();
+  const { getProject } = useProjects();
   const { teams, load: loadTeams } = useTeams();
-  const [project, setProject] = useState<CCProject | null>(null);
+  const [project, setProject] = useState<Project | null>(null);
   const [loading, setLoading] = useState(true);
   const navigate = useNavigate();
   const [searchParams] = useSearchParams();
@@ -334,7 +504,7 @@ export function ProjectDetailPage({ projectId, onBack }: ProjectDetailPageProps)
             <SettingsTab
               projectId={projectId}
               project={project}
-              onDeleted={() => navigate(ROUTES.CC_PROJECTS)}
+              onDeleted={() => navigate(ROUTES.PROJECTS)}
               onSaved={reload}
             />
           </TabsContent>

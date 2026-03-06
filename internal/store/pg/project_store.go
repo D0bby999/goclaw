@@ -9,14 +9,14 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
-// PGCCStore implements store.CCStore backed by Postgres.
-type PGCCStore struct {
+// PGProjectStore implements store.ProjectStore backed by Postgres.
+type PGProjectStore struct {
 	db     *sql.DB
 	encKey string
 }
 
-func NewPGCCStore(db *sql.DB, encryptionKey string) *PGCCStore {
-	return &PGCCStore{db: db, encKey: encryptionKey}
+func NewPGProjectStore(db *sql.DB, encryptionKey string) *PGProjectStore {
+	return &PGProjectStore{db: db, encKey: encryptionKey}
 }
 
 // ============================================================
@@ -25,7 +25,7 @@ func NewPGCCStore(db *sql.DB, encryptionKey string) *PGCCStore {
 
 const projectSelectCols = `id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, owner_id, team_id, status, created_at, updated_at`
 
-func (s *PGCCStore) CreateProject(ctx context.Context, p *store.CCProjectData) error {
+func (s *PGProjectStore) CreateProject(ctx context.Context, p *store.ProjectData) error {
 	if p.ID == uuid.Nil {
 		p.ID = store.GenNewID()
 	}
@@ -33,7 +33,7 @@ func (s *PGCCStore) CreateProject(ctx context.Context, p *store.CCProjectData) e
 	p.CreatedAt = now
 	p.UpdatedAt = now
 	if p.Status == "" {
-		p.Status = store.CCProjectStatusActive
+		p.Status = store.ProjectStatusActive
 	}
 	if p.MaxSessions == 0 {
 		p.MaxSessions = 3
@@ -43,7 +43,7 @@ func (s *PGCCStore) CreateProject(ctx context.Context, p *store.CCProjectData) e
 	claudeConfig := jsonOrNull(p.ClaudeConfig)
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO cc_projects (id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, owner_id, team_id, status, created_at, updated_at)
+		`INSERT INTO projects (id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, owner_id, team_id, status, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		p.ID, p.Name, p.Slug, p.WorkDir, p.Description,
 		allowedTools, claudeConfig, p.MaxSessions,
@@ -52,15 +52,15 @@ func (s *PGCCStore) CreateProject(ctx context.Context, p *store.CCProjectData) e
 	return err
 }
 
-func (s *PGCCStore) GetProject(ctx context.Context, id uuid.UUID) (*store.CCProjectData, error) {
+func (s *PGProjectStore) GetProject(ctx context.Context, id uuid.UUID) (*store.ProjectData, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT `+projectSelectCols+` FROM cc_projects WHERE id = $1`, id)
+		`SELECT `+projectSelectCols+` FROM projects WHERE id = $1`, id)
 	return s.scanProjectRow(row)
 }
 
-func (s *PGCCStore) GetProjectBySlug(ctx context.Context, slug string) (*store.CCProjectData, error) {
+func (s *PGProjectStore) GetProjectBySlug(ctx context.Context, slug string) (*store.ProjectData, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT `+projectSelectCols+` FROM cc_projects WHERE slug = $1`, slug)
+		`SELECT `+projectSelectCols+` FROM projects WHERE slug = $1`, slug)
 	return s.scanProjectRow(row)
 }
 
@@ -78,23 +78,23 @@ var allowedSessionCols = map[string]bool{
 	"error": true, "stopped_at": true, "updated_at": true,
 }
 
-func (s *PGCCStore) UpdateProject(ctx context.Context, id uuid.UUID, updates map[string]any) error {
+func (s *PGProjectStore) UpdateProject(ctx context.Context, id uuid.UUID, updates map[string]any) error {
 	filtered := filterCols(updates, allowedProjectCols)
 	if len(filtered) == 0 {
 		return nil
 	}
 	filtered["updated_at"] = nowUTC()
-	return execMapUpdate(ctx, s.db, "cc_projects", id, filtered)
+	return execMapUpdate(ctx, s.db, "projects", id, filtered)
 }
 
-func (s *PGCCStore) DeleteProject(ctx context.Context, id uuid.UUID) error {
-	_, err := s.db.ExecContext(ctx, `DELETE FROM cc_projects WHERE id = $1`, id)
+func (s *PGProjectStore) DeleteProject(ctx context.Context, id uuid.UUID) error {
+	_, err := s.db.ExecContext(ctx, `DELETE FROM projects WHERE id = $1`, id)
 	return err
 }
 
-func (s *PGCCStore) ListProjects(ctx context.Context, ownerID string) ([]store.CCProjectData, error) {
+func (s *PGProjectStore) ListProjects(ctx context.Context, ownerID string) ([]store.ProjectData, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+projectSelectCols+` FROM cc_projects WHERE owner_id = $1 AND status = 'active' ORDER BY created_at DESC`, ownerID)
+		`SELECT `+projectSelectCols+` FROM projects WHERE owner_id = $1 AND status = 'active' ORDER BY created_at DESC`, ownerID)
 	if err != nil {
 		return nil, err
 	}
@@ -102,9 +102,9 @@ func (s *PGCCStore) ListProjects(ctx context.Context, ownerID string) ([]store.C
 	return s.scanProjectRows(rows)
 }
 
-func (s *PGCCStore) ListProjectsByTeam(ctx context.Context, teamID uuid.UUID) ([]store.CCProjectData, error) {
+func (s *PGProjectStore) ListProjectsByTeam(ctx context.Context, teamID uuid.UUID) ([]store.ProjectData, error) {
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+projectSelectCols+` FROM cc_projects WHERE team_id = $1 AND status = 'active' ORDER BY created_at DESC`, teamID)
+		`SELECT `+projectSelectCols+` FROM projects WHERE team_id = $1 AND status = 'active' ORDER BY created_at DESC`, teamID)
 	if err != nil {
 		return nil, err
 	}
@@ -112,8 +112,8 @@ func (s *PGCCStore) ListProjectsByTeam(ctx context.Context, teamID uuid.UUID) ([
 	return s.scanProjectRows(rows)
 }
 
-func (s *PGCCStore) scanProjectRow(row *sql.Row) (*store.CCProjectData, error) {
-	var p store.CCProjectData
+func (s *PGProjectStore) scanProjectRow(row *sql.Row) (*store.ProjectData, error) {
+	var p store.ProjectData
 	var desc, status sql.NullString
 	var teamID *uuid.UUID
 	var allowedTools, claudeConfig []byte
@@ -136,10 +136,10 @@ func (s *PGCCStore) scanProjectRow(row *sql.Row) (*store.CCProjectData, error) {
 	return &p, nil
 }
 
-func (s *PGCCStore) scanProjectRows(rows *sql.Rows) ([]store.CCProjectData, error) {
-	var projects []store.CCProjectData
+func (s *PGProjectStore) scanProjectRows(rows *sql.Rows) ([]store.ProjectData, error) {
+	var projects []store.ProjectData
 	for rows.Next() {
-		var p store.CCProjectData
+		var p store.ProjectData
 		var desc, status sql.NullString
 		var teamID *uuid.UUID
 		var allowedTools, claudeConfig []byte
@@ -170,7 +170,7 @@ func (s *PGCCStore) scanProjectRows(rows *sql.Rows) ([]store.CCProjectData, erro
 
 const sessionSelectCols = `s.id, s.project_id, s.claude_session_id, s.label, s.status, s.pid, s.started_by, s.input_tokens, s.output_tokens, s.cost_usd, s.error, s.started_at, s.stopped_at, s.created_at, s.updated_at`
 
-func (s *PGCCStore) CreateSession(ctx context.Context, sess *store.CCSessionData) error {
+func (s *PGProjectStore) CreateSession(ctx context.Context, sess *store.ProjectSessionData) error {
 	if sess.ID == uuid.Nil {
 		sess.ID = store.GenNewID()
 	}
@@ -178,12 +178,12 @@ func (s *PGCCStore) CreateSession(ctx context.Context, sess *store.CCSessionData
 	sess.CreatedAt = now
 	sess.UpdatedAt = now
 	if sess.Status == "" {
-		sess.Status = store.CCSessionStatusStarting
+		sess.Status = store.ProjectSessionStatusStarting
 	}
 	sess.StartedAt = now
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO cc_sessions (id, project_id, claude_session_id, label, status, pid, started_by, input_tokens, output_tokens, cost_usd, error, started_at, stopped_at, created_at, updated_at)
+		`INSERT INTO project_sessions (id, project_id, claude_session_id, label, status, pid, started_by, input_tokens, output_tokens, cost_usd, error, started_at, stopped_at, created_at, updated_at)
 		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
 		sess.ID, sess.ProjectID, nilStr(derefStr(sess.ClaudeSessionID)), sess.Label,
 		sess.Status, nilInt(derefInt(sess.PID)), sess.StartedBy,
@@ -194,40 +194,57 @@ func (s *PGCCStore) CreateSession(ctx context.Context, sess *store.CCSessionData
 	return err
 }
 
-func (s *PGCCStore) GetSession(ctx context.Context, id uuid.UUID) (*store.CCSessionData, error) {
+func (s *PGProjectStore) GetSession(ctx context.Context, id uuid.UUID) (*store.ProjectSessionData, error) {
 	row := s.db.QueryRowContext(ctx,
 		`SELECT `+sessionSelectCols+`, COALESCE(p.name, '') AS project_name, COALESCE(p.slug, '') AS project_slug
-		 FROM cc_sessions s
-		 LEFT JOIN cc_projects p ON p.id = s.project_id
+		 FROM project_sessions s
+		 LEFT JOIN projects p ON p.id = s.project_id
 		 WHERE s.id = $1`, id)
 	return scanSessionRow(row)
 }
 
-func (s *PGCCStore) UpdateSession(ctx context.Context, id uuid.UUID, updates map[string]any) error {
+func (s *PGProjectStore) UpdateSession(ctx context.Context, id uuid.UUID, updates map[string]any) error {
 	filtered := filterCols(updates, allowedSessionCols)
 	if len(filtered) == 0 {
 		return nil
 	}
 	filtered["updated_at"] = nowUTC()
-	return execMapUpdate(ctx, s.db, "cc_sessions", id, filtered)
+	return execMapUpdate(ctx, s.db, "project_sessions", id, filtered)
 }
 
-func (s *PGCCStore) ListSessions(ctx context.Context, projectID uuid.UUID, limit, offset int) ([]store.CCSessionData, int, error) {
+func (s *PGProjectStore) DeleteSession(ctx context.Context, id uuid.UUID) error {
+	// Delete logs first (FK dependency), then the session.
+	tx, err := s.db.BeginTx(ctx, nil)
+	if err != nil {
+		return err
+	}
+	defer tx.Rollback()
+
+	if _, err := tx.ExecContext(ctx, `DELETE FROM project_session_logs WHERE session_id = $1`, id); err != nil {
+		return err
+	}
+	if _, err := tx.ExecContext(ctx, `DELETE FROM project_sessions WHERE id = $1`, id); err != nil {
+		return err
+	}
+	return tx.Commit()
+}
+
+func (s *PGProjectStore) ListSessions(ctx context.Context, projectID uuid.UUID, limit, offset int) ([]store.ProjectSessionData, int, error) {
 	if limit <= 0 {
 		limit = 50
 	}
 
 	var total int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM cc_sessions WHERE project_id = $1`, projectID).Scan(&total)
+		`SELECT COUNT(*) FROM project_sessions WHERE project_id = $1`, projectID).Scan(&total)
 	if err != nil {
 		return nil, 0, err
 	}
 
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT `+sessionSelectCols+`, COALESCE(p.name, '') AS project_name, COALESCE(p.slug, '') AS project_slug
-		 FROM cc_sessions s
-		 LEFT JOIN cc_projects p ON p.id = s.project_id
+		 FROM project_sessions s
+		 LEFT JOIN projects p ON p.id = s.project_id
 		 WHERE s.project_id = $1
 		 ORDER BY s.created_at DESC
 		 LIMIT $2 OFFSET $3`, projectID, limit, offset)
@@ -236,7 +253,7 @@ func (s *PGCCStore) ListSessions(ctx context.Context, projectID uuid.UUID, limit
 	}
 	defer rows.Close()
 
-	var sessions []store.CCSessionData
+	var sessions []store.ProjectSessionData
 	for rows.Next() {
 		sess, err := scanSessionFromRows(rows)
 		if err != nil {
@@ -247,15 +264,15 @@ func (s *PGCCStore) ListSessions(ctx context.Context, projectID uuid.UUID, limit
 	return sessions, total, rows.Err()
 }
 
-func (s *PGCCStore) ActiveSessionCount(ctx context.Context, projectID uuid.UUID) (int, error) {
+func (s *PGProjectStore) ActiveSessionCount(ctx context.Context, projectID uuid.UUID) (int, error) {
 	var count int
 	err := s.db.QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM cc_sessions WHERE project_id = $1 AND status IN ('starting', 'running')`, projectID).Scan(&count)
+		`SELECT COUNT(*) FROM project_sessions WHERE project_id = $1 AND status IN ('starting', 'running')`, projectID).Scan(&count)
 	return count, err
 }
 
-func scanSessionRow(row *sql.Row) (*store.CCSessionData, error) {
-	var sess store.CCSessionData
+func scanSessionRow(row *sql.Row) (*store.ProjectSessionData, error) {
+	var sess store.ProjectSessionData
 	var claudeSessionID, label, status, errorStr sql.NullString
 	var pid sql.NullInt32
 	var stoppedAt sql.NullTime
@@ -289,8 +306,8 @@ func scanSessionRow(row *sql.Row) (*store.CCSessionData, error) {
 	return &sess, nil
 }
 
-func scanSessionFromRows(rows *sql.Rows) (*store.CCSessionData, error) {
-	var sess store.CCSessionData
+func scanSessionFromRows(rows *sql.Rows) (*store.ProjectSessionData, error) {
+	var sess store.ProjectSessionData
 	var claudeSessionID, label, status, errorStr sql.NullString
 	var pid sql.NullInt32
 	var stoppedAt sql.NullTime
@@ -328,7 +345,7 @@ func scanSessionFromRows(rows *sql.Rows) (*store.CCSessionData, error) {
 // Logs
 // ============================================================
 
-func (s *PGCCStore) AppendLog(ctx context.Context, log *store.CCSessionLogData) error {
+func (s *PGProjectStore) AppendLog(ctx context.Context, log *store.ProjectSessionLogData) error {
 	if log.ID == uuid.Nil {
 		log.ID = store.GenNewID()
 	}
@@ -338,21 +355,21 @@ func (s *PGCCStore) AppendLog(ctx context.Context, log *store.CCSessionLogData) 
 
 	// Atomic seq assignment via INSERT ... SELECT to avoid TOCTOU race
 	err := s.db.QueryRowContext(ctx,
-		`INSERT INTO cc_session_logs (id, session_id, event_type, content, seq, created_at)
-		 VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(seq), -1) + 1 FROM cc_session_logs WHERE session_id = $2), $5)
+		`INSERT INTO project_session_logs (id, session_id, event_type, content, seq, created_at)
+		 VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(seq), -1) + 1 FROM project_session_logs WHERE session_id = $2), $5)
 		 RETURNING seq`,
 		log.ID, log.SessionID, log.EventType, []byte(log.Content), log.CreatedAt,
 	).Scan(&log.Seq)
 	return err
 }
 
-func (s *PGCCStore) GetLogs(ctx context.Context, sessionID uuid.UUID, afterSeq, limit int) ([]store.CCSessionLogData, error) {
+func (s *PGProjectStore) GetLogs(ctx context.Context, sessionID uuid.UUID, afterSeq, limit int) ([]store.ProjectSessionLogData, error) {
 	if limit <= 0 {
 		limit = 200
 	}
 	rows, err := s.db.QueryContext(ctx,
 		`SELECT id, session_id, event_type, content, seq, created_at
-		 FROM cc_session_logs
+		 FROM project_session_logs
 		 WHERE session_id = $1 AND seq > $2
 		 ORDER BY seq ASC
 		 LIMIT $3`, sessionID, afterSeq, limit)
@@ -361,9 +378,9 @@ func (s *PGCCStore) GetLogs(ctx context.Context, sessionID uuid.UUID, afterSeq, 
 	}
 	defer rows.Close()
 
-	var logs []store.CCSessionLogData
+	var logs []store.ProjectSessionLogData
 	for rows.Next() {
-		var l store.CCSessionLogData
+		var l store.ProjectSessionLogData
 		if err := rows.Scan(&l.ID, &l.SessionID, &l.EventType, &l.Content, &l.Seq, &l.CreatedAt); err != nil {
 			return nil, err
 		}

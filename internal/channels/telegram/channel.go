@@ -14,6 +14,7 @@ import (
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
+	"github.com/nextlevelbuilder/goclaw/internal/claudecode"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
@@ -24,8 +25,13 @@ type Channel struct {
 	bot              *telego.Bot
 	config           config.TelegramConfig
 	pairingService   store.PairingStore
-	agentStore       store.AgentStore // for group file writer management (nil in standalone)
-	teamStore        store.TeamStore  // for /tasks, /task_detail commands (nil in standalone)
+	agentStore       store.AgentStore          // for group file writer management (nil in standalone)
+	teamStore        store.TeamStore           // for /tasks, /task_detail commands (nil in standalone)
+	projectStore     store.ProjectStore        // for project session management (nil if disabled)
+	projectManager   *claudecode.ProcessManager // for project process control (nil if disabled)
+	projectPending   sync.Map         // chatID string → projectID string (waiting for initial prompt)
+	projectActiveSession sync.Map     // chatID string → sessionID string (active project session)
+	projectPendingRename sync.Map     // chatID string → sessionID string (waiting for rename label)
 	placeholders     sync.Map         // localKey string → messageID int
 	stopThinking     sync.Map         // localKey string → *thinkingCancel
 	typingCtrls      sync.Map         // localKey string → *typing.Controller
@@ -49,6 +55,13 @@ func (c *thinkingCancel) Cancel() {
 	if c != nil && c.fn != nil {
 		c.fn()
 	}
+}
+
+// SetProjectServices injects project store and manager after construction.
+// Both must be non-nil for /project commands to be available.
+func (c *Channel) SetProjectServices(projectStore store.ProjectStore, projectManager *claudecode.ProcessManager) {
+	c.projectStore = projectStore
+	c.projectManager = projectManager
 }
 
 // New creates a new Telegram channel from config.
@@ -127,6 +140,16 @@ func (c *Channel) Start(ctx context.Context) error {
 
 	c.SetRunning(true)
 	slog.Info("telegram bot connected", "username", c.bot.Username())
+
+	// Subscribe to project output events and forward to active Telegram sessions
+	if c.projectManager != nil {
+		c.Bus().Subscribe("telegram-project-output", func(event bus.Event) {
+			if event.Name != "project.output" {
+				return
+			}
+			go c.handleProjectOutputEvent(pollCtx, event)
+		})
+	}
 
 	// Register bot menu commands with retry.
 	go func() {
@@ -207,6 +230,7 @@ func (c *Channel) StreamEnabled(isGroup bool) bool {
 func (c *Channel) Stop(_ context.Context) error {
 	slog.Info("stopping telegram bot")
 	c.SetRunning(false)
+	c.Bus().Unsubscribe("telegram-project-output")
 
 	if c.pollCancel != nil {
 		c.pollCancel()

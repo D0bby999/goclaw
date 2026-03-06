@@ -1,7 +1,7 @@
 import { create } from "zustand";
-import type { StreamEvent } from "@/types/claude-code";
+import type { StreamEvent } from "@/types/project";
 
-interface ClaudeCodeState {
+interface ProjectStoreState {
   sessionLogs: Record<string, StreamEvent[]>;
   sessionStatuses: Record<string, string>;
 
@@ -10,7 +10,7 @@ interface ClaudeCodeState {
   updateStatus: (sessionId: string, status: string) => void;
 }
 
-export const useClaudeCodeStore = create<ClaudeCodeState>((set, get) => ({
+export const useProjectStore = create<ProjectStoreState>((set, get) => ({
   sessionLogs: {},
   sessionStatuses: {},
 

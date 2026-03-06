@@ -6,7 +6,7 @@ import {
 } from "lucide-react";
 import { MarkdownRenderer } from "@/components/shared/markdown-renderer";
 import { cn } from "@/lib/utils";
-import type { StreamEvent } from "@/types/claude-code";
+import type { StreamEvent } from "@/types/project";
 
 // --- Tool icon + color mapping ---
 
@@ -47,6 +47,69 @@ function getToolSummary(name: string, input: unknown): string {
   }
 }
 
+// --- Specialized tool detail renderers ---
+
+function EditToolDetail({ input }: { input: Record<string, unknown> }) {
+  const filePath = String(input.file_path ?? "");
+  const oldStr = String(input.old_string ?? "");
+  const newStr = String(input.new_string ?? "");
+
+  return (
+    <div className="ml-[22px] mt-1 rounded overflow-hidden border border-slate-800">
+      {filePath && (
+        <div className="bg-slate-800/80 text-slate-400 text-[11px] font-mono px-2 py-1 border-b border-slate-800">
+          {filePath}
+        </div>
+      )}
+      <div className="text-xs font-mono max-h-60 overflow-y-auto">
+        {oldStr && oldStr.split("\n").map((line, i) => (
+          <div key={`old-${i}`} className="bg-red-950/30 text-red-300 px-2 py-px">
+            <span className="text-red-500/60 select-none mr-1">-</span>{line}
+          </div>
+        ))}
+        {newStr && newStr.split("\n").map((line, i) => (
+          <div key={`new-${i}`} className="bg-emerald-950/30 text-emerald-300 px-2 py-px">
+            <span className="text-emerald-500/60 select-none mr-1">+</span>{line}
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function WriteToolDetail({ input }: { input: Record<string, unknown> }) {
+  const filePath = String(input.file_path ?? "");
+  const content = String(input.content ?? "");
+
+  return (
+    <div className="ml-[22px] mt-1 rounded overflow-hidden border border-slate-800">
+      {filePath && (
+        <div className="bg-slate-800/80 text-slate-400 text-[11px] font-mono px-2 py-1 border-b border-slate-800">
+          {filePath}
+        </div>
+      )}
+      <pre className="text-xs font-mono text-slate-300 px-2 py-1 max-h-60 overflow-y-auto whitespace-pre-wrap break-all bg-slate-900/50">
+        {content.slice(0, 3000)}{content.length > 3000 ? "\n..." : ""}
+      </pre>
+    </div>
+  );
+}
+
+function BashToolDetail({ input }: { input: Record<string, unknown> }) {
+  const command = String(input.command ?? "");
+
+  return (
+    <div className="ml-[22px] mt-1 rounded overflow-hidden border border-slate-800">
+      <div className="bg-slate-900/80 px-2 py-1.5 flex items-center gap-1.5">
+        <span className="text-purple-400 text-[11px] select-none">$</span>
+        <code className="text-xs font-mono text-slate-200 whitespace-pre-wrap break-all">
+          {command.slice(0, 2000)}{command.length > 2000 ? "..." : ""}
+        </code>
+      </div>
+    </div>
+  );
+}
+
 // --- Sub-components ---
 
 function AssistantTextBlock({ text }: { text: string }) {
@@ -65,7 +128,24 @@ function ToolCallBlock({ name, input }: { name: string; input: unknown }) {
   const meta = TOOL_META[name] ?? { icon: Wrench, color: "text-slate-400" };
   const Icon = meta.icon;
   const summary = getToolSummary(name, input);
-  const inputStr = typeof input === "object" ? JSON.stringify(input, null, 2) : String(input ?? "");
+  const inp = input as Record<string, unknown> | undefined;
+
+  const renderDetail = () => {
+    if (!inp) return null;
+    switch (name) {
+      case "Edit":  return <EditToolDetail input={inp} />;
+      case "Write": return <WriteToolDetail input={inp} />;
+      case "Bash":  return <BashToolDetail input={inp} />;
+      default: {
+        const str = JSON.stringify(input, null, 2);
+        return (
+          <pre className="ml-[22px] mt-1 text-xs text-slate-500 font-mono whitespace-pre-wrap break-all max-h-60 overflow-y-auto bg-slate-900/50 rounded px-2 py-1">
+            {str.slice(0, 2000)}{str.length > 2000 ? "\n..." : ""}
+          </pre>
+        );
+      }
+    }
+  };
 
   return (
     <div className="my-1">
@@ -81,11 +161,7 @@ function ToolCallBlock({ name, input }: { name: string; input: unknown }) {
         <Icon className="h-3.5 w-3.5 shrink-0" />
         <span className="truncate">{summary}</span>
       </button>
-      {expanded && inputStr && (
-        <pre className="ml-[22px] mt-1 text-xs text-slate-500 font-mono whitespace-pre-wrap break-all max-h-60 overflow-y-auto bg-slate-900/50 rounded px-2 py-1">
-          {inputStr.slice(0, 2000)}{inputStr.length > 2000 ? "\n..." : ""}
-        </pre>
-      )}
+      {expanded && renderDetail()}
     </div>
   );
 }
@@ -112,8 +188,8 @@ function ToolResultBlock({ content, isError }: { content: unknown; isError: bool
       </button>
       {expanded && text && (
         <pre className={cn(
-          "ml-[22px] mt-1 text-xs font-mono whitespace-pre-wrap break-all max-h-60 overflow-y-auto rounded px-2 py-1",
-          isError ? "bg-red-950/30 text-red-300" : "bg-slate-900/50 text-slate-400",
+          "ml-[22px] mt-1 text-xs font-mono whitespace-pre-wrap break-all max-h-60 overflow-y-auto rounded px-2 py-1 border",
+          isError ? "bg-red-950/30 text-red-300 border-red-900/50" : "bg-slate-900/50 text-slate-400 border-slate-800",
         )}>
           {text.slice(0, 5000)}{text.length > 5000 ? "\n..." : ""}
         </pre>

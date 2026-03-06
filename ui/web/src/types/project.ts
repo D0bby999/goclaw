@@ -1,4 +1,4 @@
-export interface CCProject {
+export interface Project {
   id: string;
   name: string;
   slug: string;
@@ -14,7 +14,7 @@ export interface CCProject {
   updated_at?: string;
 }
 
-export interface CCSession {
+export interface ProjectSession {
   id: string;
   project_id: string;
   claude_session_id?: string;
@@ -32,7 +32,7 @@ export interface CCSession {
   project_slug?: string;
 }
 
-export interface CCSessionLog {
+export interface ProjectSessionLog {
   id: string;
   session_id: string;
   event_type: string;

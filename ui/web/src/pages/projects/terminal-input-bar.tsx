@@ -1,4 +1,4 @@
-import { useRef, useCallback } from "react";
+import { useRef, useCallback, useEffect } from "react";
 import { Send, Square } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Textarea } from "@/components/ui/textarea";
@@ -12,14 +12,20 @@ interface TerminalInputBarProps {
   isRunning: boolean;
   canSend: boolean;
   sending: boolean;
-  canResume: boolean;
 }
 
 export function TerminalInputBar({
   prompt, onPromptChange, onSend, onStop,
-  isRunning, canSend, sending, canResume,
+  isRunning, canSend, sending,
 }: TerminalInputBarProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
+
+  // Auto-focus input when Claude finishes responding
+  useEffect(() => {
+    if (!isRunning && canSend && !sending) {
+      textareaRef.current?.focus();
+    }
+  }, [isRunning, canSend, sending]);
 
   const handleKeyDown = useCallback((e: React.KeyboardEvent) => {
     if (e.key === "Enter" && !e.shiftKey) {
@@ -29,10 +35,10 @@ export function TerminalInputBar({
   }, [onSend]);
 
   const placeholder = isRunning
-    ? "Send a follow-up prompt..."
-    : canResume
-      ? "Resume with a new prompt..."
-      : "Session has no resume ID";
+    ? "Claude is working... send a follow-up"
+    : canSend
+      ? "Send a message..."
+      : "Waiting for session to initialize...";
 
   return (
     <div className="border-t border-slate-800 px-4 py-3 shrink-0">

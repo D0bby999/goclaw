@@ -17,7 +17,7 @@ import {
 } from "@/components/ui/select";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { usePagination } from "@/hooks/use-pagination";
-import { useClaudeCode } from "./hooks/use-claude-code";
+import { useProjects } from "./hooks/use-projects";
 import { useTeams } from "../teams/hooks/use-teams";
 import { ProjectCard } from "./project-card";
 import { ProjectCreateDialog } from "./project-create-dialog";
@@ -27,7 +27,7 @@ import { ROUTES } from "@/lib/constants";
 export function ProjectsPage() {
   const { id: detailId } = useParams<{ id: string }>();
   const navigate = useNavigate();
-  const { projects, loading, error, createProject, deleteProject } = useClaudeCode();
+  const { projects, loading, error, createProject, deleteProject } = useProjects();
   const { teams, load: loadTeams } = useTeams();
   const showSkeleton = useDeferredLoading(loading && projects.length === 0);
 
@@ -50,7 +50,7 @@ export function ProjectsPage() {
     return (
       <ProjectDetailPage
         projectId={detailId}
-        onBack={() => navigate(ROUTES.CC_PROJECTS)}
+        onBack={() => navigate(ROUTES.PROJECTS)}
       />
     );
   }
@@ -80,8 +80,8 @@ export function ProjectsPage() {
   return (
     <div className="p-4 sm:p-6">
       <PageHeader
-        title="Claude Code"
-        description="Manage Claude Code orchestration projects and sessions"
+        title="Projects"
+        description="Manage orchestration projects and sessions"
         actions={
           <Button onClick={() => setCreateOpen(true)} className="gap-1">
             <Plus className="h-4 w-4" /> New Project
@@ -130,7 +130,7 @@ export function ProjectsPage() {
             description={
               search || teamFilter !== "all"
                 ? "Try a different search term or filter."
-                : "Create your first Claude Code project to get started."
+                : "Create your first project to get started."
             }
           />
         ) : (
@@ -141,8 +141,8 @@ export function ProjectsPage() {
                   key={project.id}
                   project={project}
                   teamName={project.team_id ? teamNameMap.get(project.team_id) : undefined}
-                  onClick={() => navigate(`${ROUTES.CC_PROJECTS}/${project.id}`)}
-                  onEdit={() => navigate(`${ROUTES.CC_PROJECTS}/${project.id}?tab=settings`)}
+                  onClick={() => navigate(`${ROUTES.PROJECTS}/${project.id}`)}
+                  onEdit={() => navigate(`${ROUTES.PROJECTS}/${project.id}?tab=settings`)}
                   onDelete={() => setDeleteTarget({ id: project.id, name: project.name })}
                 />
               ))}

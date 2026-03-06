@@ -13,36 +13,38 @@ import (
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
-// ClaudeCodeMethods handles cc.* RPC methods.
-type ClaudeCodeMethods struct {
-	ccStore store.CCStore
+// ProjectsMethods handles projects.* RPC methods.
+type ProjectsMethods struct {
+	store   store.ProjectStore
 	manager *claudecode.ProcessManager
 	msgBus  *bus.MessageBus
 }
 
-func NewClaudeCodeMethods(ccStore store.CCStore, manager *claudecode.ProcessManager, msgBus *bus.MessageBus) *ClaudeCodeMethods {
-	return &ClaudeCodeMethods{ccStore: ccStore, manager: manager, msgBus: msgBus}
+func NewProjectsMethods(store store.ProjectStore, manager *claudecode.ProcessManager, msgBus *bus.MessageBus) *ProjectsMethods {
+	return &ProjectsMethods{store: store, manager: manager, msgBus: msgBus}
 }
 
-func (m *ClaudeCodeMethods) Register(router *gateway.MethodRouter) {
-	router.Register(protocol.MethodCCProjectsList, m.handleProjectsList)
-	router.Register(protocol.MethodCCProjectsCreate, m.handleProjectsCreate)
-	router.Register(protocol.MethodCCProjectsGet, m.handleProjectsGet)
-	router.Register(protocol.MethodCCProjectsUpdate, m.handleProjectsUpdate)
-	router.Register(protocol.MethodCCProjectsDelete, m.handleProjectsDelete)
-	router.Register(protocol.MethodCCSessionsList, m.handleSessionsList)
-	router.Register(protocol.MethodCCSessionsStart, m.handleSessionsStart)
-	router.Register(protocol.MethodCCSessionsGet, m.handleSessionsGet)
-	router.Register(protocol.MethodCCSessionsPrompt, m.handleSessionsPrompt)
-	router.Register(protocol.MethodCCSessionsStop, m.handleSessionsStop)
-	router.Register(protocol.MethodCCSessionsLogs, m.handleSessionsLogs)
+func (m *ProjectsMethods) Register(router *gateway.MethodRouter) {
+	router.Register(protocol.MethodProjectsList, m.handleProjectsList)
+	router.Register(protocol.MethodProjectsCreate, m.handleProjectsCreate)
+	router.Register(protocol.MethodProjectsGet, m.handleProjectsGet)
+	router.Register(protocol.MethodProjectsUpdate, m.handleProjectsUpdate)
+	router.Register(protocol.MethodProjectsDelete, m.handleProjectsDelete)
+	router.Register(protocol.MethodProjectSessionsList, m.handleSessionsList)
+	router.Register(protocol.MethodProjectSessionsStart, m.handleSessionsStart)
+	router.Register(protocol.MethodProjectSessionsGet, m.handleSessionsGet)
+	router.Register(protocol.MethodProjectSessionsPrompt, m.handleSessionsPrompt)
+	router.Register(protocol.MethodProjectSessionsStop, m.handleSessionsStop)
+	router.Register(protocol.MethodProjectSessionsDelete, m.handleSessionsDelete)
+	router.Register(protocol.MethodProjectSessionsUpdate, m.handleSessionsUpdate)
+	router.Register(protocol.MethodProjectSessionsLogs, m.handleSessionsLogs)
 }
 
 // --- Projects ---
 
-func (m *ClaudeCodeMethods) handleProjectsList(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleProjectsList(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -52,7 +54,7 @@ func (m *ClaudeCodeMethods) handleProjectsList(_ context.Context, client *gatewa
 		_ = json.Unmarshal(req.Params, &params)
 	}
 
-	var projects []store.CCProjectData
+	var projects []store.ProjectData
 	var err error
 	if params.TeamID != "" {
 		teamID, parseErr := uuid.Parse(params.TeamID)
@@ -60,27 +62,27 @@ func (m *ClaudeCodeMethods) handleProjectsList(_ context.Context, client *gatewa
 			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid team_id"))
 			return
 		}
-		projects, err = m.ccStore.ListProjectsByTeam(context.Background(), teamID)
+		projects, err = m.store.ListProjectsByTeam(context.Background(), teamID)
 	} else {
 		// No filter — list all active projects (management UI)
-		projects, err = m.ccStore.ListProjects(context.Background(), "")
+		projects, err = m.store.ListProjects(context.Background(), "")
 	}
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
 	if projects == nil {
-		projects = []store.CCProjectData{}
+		projects = []store.ProjectData{}
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"projects": projects, "count": len(projects)}))
 }
 
-func (m *ClaudeCodeMethods) handleProjectsCreate(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleProjectsCreate(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
-	var p store.CCProjectData
+	var p store.ProjectData
 	if err := json.Unmarshal(req.Params, &p); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid params"))
 		return
@@ -100,16 +102,16 @@ func (m *ClaudeCodeMethods) handleProjectsCreate(_ context.Context, client *gate
 	if p.OwnerID == "" {
 		p.OwnerID = client.UserID()
 	}
-	if err := m.ccStore.CreateProject(context.Background(), &p); err != nil {
+	if err := m.store.CreateProject(context.Background(), &p); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"project": p}))
 }
 
-func (m *ClaudeCodeMethods) handleProjectsGet(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleProjectsGet(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -124,7 +126,7 @@ func (m *ClaudeCodeMethods) handleProjectsGet(_ context.Context, client *gateway
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid id"))
 		return
 	}
-	p, err := m.ccStore.GetProject(context.Background(), id)
+	p, err := m.store.GetProject(context.Background(), id)
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
@@ -132,9 +134,9 @@ func (m *ClaudeCodeMethods) handleProjectsGet(_ context.Context, client *gateway
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"project": p}))
 }
 
-func (m *ClaudeCodeMethods) handleProjectsUpdate(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleProjectsUpdate(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -165,16 +167,16 @@ func (m *ClaudeCodeMethods) handleProjectsUpdate(_ context.Context, client *gate
 			return
 		}
 	}
-	if err := m.ccStore.UpdateProject(context.Background(), id, params.Updates); err != nil {
+	if err := m.store.UpdateProject(context.Background(), id, params.Updates); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]string{"status": "ok"}))
 }
 
-func (m *ClaudeCodeMethods) handleProjectsDelete(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleProjectsDelete(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -189,7 +191,7 @@ func (m *ClaudeCodeMethods) handleProjectsDelete(_ context.Context, client *gate
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid id"))
 		return
 	}
-	if err := m.ccStore.DeleteProject(context.Background(), id); err != nil {
+	if err := m.store.DeleteProject(context.Background(), id); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
@@ -198,9 +200,9 @@ func (m *ClaudeCodeMethods) handleProjectsDelete(_ context.Context, client *gate
 
 // --- Sessions ---
 
-func (m *ClaudeCodeMethods) handleSessionsList(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleSessionsList(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -220,20 +222,20 @@ func (m *ClaudeCodeMethods) handleSessionsList(_ context.Context, client *gatewa
 	if params.Limit <= 0 {
 		params.Limit = 50
 	}
-	sessions, total, err := m.ccStore.ListSessions(context.Background(), projectID, params.Limit, params.Offset)
+	sessions, total, err := m.store.ListSessions(context.Background(), projectID, params.Limit, params.Offset)
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
 	if sessions == nil {
-		sessions = []store.CCSessionData{}
+		sessions = []store.ProjectSessionData{}
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"sessions": sessions, "total": total}))
 }
 
-func (m *ClaudeCodeMethods) handleSessionsStart(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil || m.manager == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleSessionsStart(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil || m.manager == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -257,7 +259,7 @@ func (m *ClaudeCodeMethods) handleSessionsStart(_ context.Context, client *gatew
 		return
 	}
 
-	proj, err := m.ccStore.GetProject(context.Background(), projectID)
+	proj, err := m.store.GetProject(context.Background(), projectID)
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "project not found"))
 		return
@@ -283,13 +285,13 @@ func (m *ClaudeCodeMethods) handleSessionsStart(_ context.Context, client *gatew
 		return
 	}
 
-	sess, _ := m.ccStore.GetSession(context.Background(), sessionID)
+	sess, _ := m.store.GetSession(context.Background(), sessionID)
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"session": sess}))
 }
 
-func (m *ClaudeCodeMethods) handleSessionsGet(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleSessionsGet(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -304,7 +306,7 @@ func (m *ClaudeCodeMethods) handleSessionsGet(_ context.Context, client *gateway
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid id"))
 		return
 	}
-	sess, err := m.ccStore.GetSession(context.Background(), id)
+	sess, err := m.store.GetSession(context.Background(), id)
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
@@ -312,9 +314,9 @@ func (m *ClaudeCodeMethods) handleSessionsGet(_ context.Context, client *gateway
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"session": sess}))
 }
 
-func (m *ClaudeCodeMethods) handleSessionsPrompt(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+func (m *ProjectsMethods) handleSessionsPrompt(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	if m.manager == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -330,17 +332,16 @@ func (m *ClaudeCodeMethods) handleSessionsPrompt(_ context.Context, client *gate
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid id"))
 		return
 	}
-	newID, err := m.manager.SendPrompt(context.Background(), id, params.Prompt)
-	if err != nil {
+	if err := m.manager.SendPrompt(context.Background(), id, params.Prompt); err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"status": "ok", "new_session_id": newID.String()}))
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]string{"status": "ok"}))
 }
 
-func (m *ClaudeCodeMethods) handleSessionsStop(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+func (m *ProjectsMethods) handleSessionsStop(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	if m.manager == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -362,9 +363,58 @@ func (m *ClaudeCodeMethods) handleSessionsStop(_ context.Context, client *gatewa
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]string{"status": "stopped"}))
 }
 
-func (m *ClaudeCodeMethods) handleSessionsLogs(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
-	if m.ccStore == nil {
-		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "claude code not available"))
+func (m *ProjectsMethods) handleSessionsDelete(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.manager == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
+		return
+	}
+	var params struct {
+		ID string `json:"id"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil || params.ID == "" {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "id required"))
+		return
+	}
+	id, err := uuid.Parse(params.ID)
+	if err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid id"))
+		return
+	}
+	if err := m.manager.Delete(context.Background(), id); err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
+		return
+	}
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]string{"status": "deleted"}))
+}
+
+func (m *ProjectsMethods) handleSessionsUpdate(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
+		return
+	}
+	var params struct {
+		ID    string `json:"id"`
+		Label string `json:"label"`
+	}
+	if err := json.Unmarshal(req.Params, &params); err != nil || params.ID == "" || params.Label == "" {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "id and label required"))
+		return
+	}
+	id, err := uuid.Parse(params.ID)
+	if err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid id"))
+		return
+	}
+	if err := m.store.UpdateSession(context.Background(), id, map[string]any{"label": params.Label}); err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
+		return
+	}
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]string{"status": "ok"}))
+}
+
+func (m *ProjectsMethods) handleSessionsLogs(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
+	if m.store == nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
 	var params struct {
@@ -384,13 +434,13 @@ func (m *ClaudeCodeMethods) handleSessionsLogs(_ context.Context, client *gatewa
 	if params.Limit <= 0 {
 		params.Limit = 500
 	}
-	logs, err := m.ccStore.GetLogs(context.Background(), sessionID, params.AfterSeq, params.Limit)
+	logs, err := m.store.GetLogs(context.Background(), sessionID, params.AfterSeq, params.Limit)
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return
 	}
 	if logs == nil {
-		logs = []store.CCSessionLogData{}
+		logs = []store.ProjectSessionLogData{}
 	}
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"logs": logs}))
 }

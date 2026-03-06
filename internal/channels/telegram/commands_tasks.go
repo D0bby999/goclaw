@@ -200,6 +200,13 @@ func (c *Channel) handleCallbackQuery(ctx context.Context, query *telego.Callbac
 		CallbackQueryID: query.ID,
 	})
 
+	// Handle project callbacks
+	if strings.HasPrefix(query.Data, "pj:") {
+		c.handleProjectCallback(ctx, query)
+		return
+	}
+
+	// Handle task detail callbacks
 	if !strings.HasPrefix(query.Data, "td:") {
 		return
 	}

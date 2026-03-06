@@ -65,7 +65,7 @@ export function SessionStartDialog({ open, onOpenChange, onStart }: SessionStart
               value={prompt}
               onChange={(e) => setPrompt(e.target.value)}
               onKeyDown={handleKeyDown}
-              placeholder="Describe what you want Claude Code to do..."
+              placeholder="Describe what you want to do..."
               rows={5}
               className="resize-none font-mono text-sm"
             />

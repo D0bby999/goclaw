@@ -22,6 +22,23 @@ func (c *Channel) handleMessage(ctx context.Context, update telego.Update) {
 		return
 	}
 
+	// Check if user is in project session mode — route to project instead of regular agent
+	if c.projectManager != nil {
+		if _, ok := c.projectActiveSession.Load(fmt.Sprintf("%d", message.Chat.ID)); ok {
+			// User has active project session — handle as project message
+			text := message.Text
+			if text == "" {
+				text = message.Caption
+			}
+			if text != "" {
+				c.handleProjectMessage(ctx, message.Chat.ID, text, func(msg *telego.SendMessageParams) {
+					msg.ChatID = tu.ID(message.Chat.ID)
+				})
+				return
+			}
+		}
+	}
+
 	// Skip service messages (member added/removed, title changed, etc.).
 	// These have no text/caption and no meaningful media — processing them
 	// pollutes mention gate and history with "[empty message]" entries.

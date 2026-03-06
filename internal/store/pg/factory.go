@@ -39,6 +39,6 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		AgentLinks:       NewPGAgentLinkStore(db),
 		Teams:            NewPGTeamStore(db),
 		BuiltinTools:     NewPGBuiltinToolStore(db),
-		CC:               NewPGCCStore(db, cfg.EncryptionKey),
+		Projects:         NewPGProjectStore(db, cfg.EncryptionKey),
 	}, nil
 }

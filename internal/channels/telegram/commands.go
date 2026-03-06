@@ -85,6 +85,8 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 			"/writers — List file writers for this group\n" +
 			"/addwriter — Add a file writer (reply to their message)\n" +
 			"/removewriter — Remove a file writer (reply to their message)\n" +
+			"/project — Project sessions\n" +
+			"/project_exit — Exit project session mode\n" +
 			"\nJust send a message to chat with the AI."
 		msg := tu.Message(chatIDObj, helpText)
 		setThread(msg)
@@ -207,6 +209,19 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 
 	case "/writers":
 		c.handleListWriters(ctx, chatID, chatIDStr, isGroup, setThread)
+		return true
+
+	case "/project":
+		c.handleProjectsList(ctx, chatID, setThread)
+		return true
+
+	case "/project_exit":
+		chatIDStr := fmt.Sprintf("%d", chatID)
+		c.projectActiveSession.Delete(chatIDStr)
+		c.projectPending.Delete(chatIDStr)
+		msg := tu.Message(chatIDObj, "Left project session mode.")
+		setThread(msg)
+		c.bot.SendMessage(ctx, msg)
 		return true
 	}
 

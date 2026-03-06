@@ -119,19 +119,21 @@ const (
 	MethodDelegationsGet  = "delegations.get"
 )
 
-// Claude Code orchestration (managed mode)
+// Projects orchestration (managed mode)
 const (
-	MethodCCProjectsList   = "cc.projects.list"
-	MethodCCProjectsCreate = "cc.projects.create"
-	MethodCCProjectsGet    = "cc.projects.get"
-	MethodCCProjectsUpdate = "cc.projects.update"
-	MethodCCProjectsDelete = "cc.projects.delete"
-	MethodCCSessionsList   = "cc.sessions.list"
-	MethodCCSessionsStart  = "cc.sessions.start"
-	MethodCCSessionsGet    = "cc.sessions.get"
-	MethodCCSessionsPrompt = "cc.sessions.prompt"
-	MethodCCSessionsStop   = "cc.sessions.stop"
-	MethodCCSessionsLogs   = "cc.sessions.logs"
+	MethodProjectsList   = "projects.list"
+	MethodProjectsCreate = "projects.create"
+	MethodProjectsGet    = "projects.get"
+	MethodProjectsUpdate = "projects.update"
+	MethodProjectsDelete = "projects.delete"
+	MethodProjectSessionsList   = "projects.sessions.list"
+	MethodProjectSessionsStart  = "projects.sessions.start"
+	MethodProjectSessionsGet    = "projects.sessions.get"
+	MethodProjectSessionsPrompt = "projects.sessions.prompt"
+	MethodProjectSessionsStop   = "projects.sessions.stop"
+	MethodProjectSessionsDelete = "projects.sessions.delete"
+	MethodProjectSessionsUpdate = "projects.sessions.update"
+	MethodProjectSessionsLogs   = "projects.sessions.logs"
 )
 
 // Phase 3+ - NICE TO HAVE methods

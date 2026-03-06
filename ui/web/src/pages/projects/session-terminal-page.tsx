@@ -1,17 +1,17 @@
 import { useState, useEffect, useCallback, useRef } from "react";
 import { useNavigate } from "react-router";
-import { ArrowLeft, Loader2 } from "lucide-react";
+import { ArrowLeft, Loader2, Trash2, Pencil, Check, X } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { useAutoScroll } from "@/hooks/use-auto-scroll";
 import { useWsEvent } from "@/hooks/use-ws-event";
 import { Events } from "@/api/protocol";
-import { useClaudeCode } from "./hooks/use-claude-code";
-import { useClaudeCodeStore } from "@/stores/use-claude-code-store";
+import { useProjects } from "./hooks/use-projects";
+import { useProjectStore } from "@/stores/use-project-store";
 import { AgentStatusIndicator, deriveAgentStatus } from "./agent-status-indicator";
 import { EventBlock } from "./terminal-event-block";
 import { TerminalInputBar } from "./terminal-input-bar";
-import type { CCSession, StreamEvent } from "@/types/claude-code";
+import type { ProjectSession, StreamEvent } from "@/types/project";
 
 interface SessionTerminalPageProps {
   sessionId: string;
@@ -19,11 +19,14 @@ interface SessionTerminalPageProps {
 
 export function SessionTerminalPage({ sessionId }: SessionTerminalPageProps) {
   const navigate = useNavigate();
-  const { getSession, sendPrompt, stopSession, getSessionLogs } = useClaudeCode();
-  const { sessionLogs, appendLog, clearLogs, updateStatus, sessionStatuses } = useClaudeCodeStore();
-  const [session, setSession] = useState<CCSession | null>(null);
+  const { getSession, sendPrompt, stopSession, deleteSession, updateSession, getSessionLogs } = useProjects();
+  const { sessionLogs, appendLog, clearLogs, updateStatus, sessionStatuses } = useProjectStore();
+  const [session, setSession] = useState<ProjectSession | null>(null);
   const [prompt, setPrompt] = useState("");
   const [sending, setSending] = useState(false);
+  const [editing, setEditing] = useState(false);
+  const [editLabel, setEditLabel] = useState("");
+  const [showDeleteConfirm, setShowDeleteConfirm] = useState(false);
   const lastEventTimeRef = useRef(Date.now());
   const logs = sessionLogs[sessionId] ?? [];
   const liveStatus = sessionStatuses[sessionId];
@@ -47,7 +50,7 @@ export function SessionTerminalPage({ sessionId }: SessionTerminalPageProps) {
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [sessionId]);
 
-  // Subscribe to live cc.output events
+  // Subscribe to live project.output events
   const handleOutput = useCallback((payload: unknown) => {
     const p = payload as { session_id?: string; event?: Partial<StreamEvent>; [k: string]: unknown };
     if (String(p.session_id ?? "") !== sessionId) return;
@@ -58,29 +61,58 @@ export function SessionTerminalPage({ sessionId }: SessionTerminalPageProps) {
       session_id: sessionId, input_tokens: evt.input_tokens,
       output_tokens: evt.output_tokens, cost_usd: evt.cost_usd,
     });
-  }, [sessionId, appendLog]);
+    // Refresh session data on result (picks up claude_session_id, updated tokens)
+    if (evt.type === "result") {
+      getSession(sessionId).then(setSession).catch(() => {});
+    }
+  }, [sessionId, appendLog, getSession]);
 
   const handleStatusChange = useCallback((payload: unknown) => {
     const p = payload as { session_id?: string; status?: string };
     if (p.session_id !== sessionId) return;
     updateStatus(sessionId, p.status ?? "");
-    if (session && p.status) setSession((s) => s ? { ...s, status: p.status as CCSession["status"] } : s);
+    if (session && p.status) setSession((s) => s ? { ...s, status: p.status as ProjectSession["status"] } : s);
   }, [sessionId, updateStatus, session]);
 
-  useWsEvent(Events.CC_OUTPUT, handleOutput);
-  useWsEvent(Events.CC_SESSION_STATUS, handleStatusChange);
+  useWsEvent(Events.PROJECT_OUTPUT, handleOutput);
+  useWsEvent(Events.PROJECT_SESSION_STATUS, handleStatusChange);
 
   const currentStatus = (liveStatus ?? session?.status ?? "stopped") as string;
   const isRunning = currentStatus === "running" || currentStatus === "starting";
   const canResume = session?.claude_session_id != null;
-  const canSendPrompt = isRunning || canResume;
-  const agentStatus = deriveAgentStatus(currentStatus, logs[logs.length - 1], lastEventTimeRef.current);
+  const canSendPrompt = canResume;
+  // Show "idle" instead of "completed" when session can accept more input
+  const rawAgentStatus = deriveAgentStatus(currentStatus, logs[logs.length - 1], lastEventTimeRef.current);
+  const agentStatus = (rawAgentStatus === "completed" && canResume) ? "idle" as const : rawAgentStatus;
 
   const latestTokens = logs.reduce((acc, e) => ({
     input: e.input_tokens ?? acc.input,
     output: e.output_tokens ?? acc.output,
   }), { input: session?.input_tokens ?? 0, output: session?.output_tokens ?? 0 });
   const totalCost = logs.reduce((sum, e) => e.cost_usd ? e.cost_usd : sum, session?.cost_usd ?? 0);
+
+  const handleStartRename = () => {
+    setEditLabel(session?.label ?? sessionId.slice(0, 8));
+    setEditing(true);
+  };
+
+  const handleSaveRename = async () => {
+    const newLabel = editLabel.trim();
+    if (!newLabel) { setEditing(false); return; }
+    try {
+      await updateSession(sessionId, { label: newLabel });
+      setSession((s) => s ? { ...s, label: newLabel } : s);
+    } catch { /* toast already shown */ }
+    setEditing(false);
+  };
+
+  const handleDelete = async () => {
+    try {
+      await deleteSession(sessionId);
+      navigate(-1);
+    } catch { /* toast already shown */ }
+    setShowDeleteConfirm(false);
+  };
 
   const handleSend = async () => {
     const text = prompt.trim();
@@ -89,12 +121,10 @@ export function SessionTerminalPage({ sessionId }: SessionTerminalPageProps) {
     setPrompt("");
     // Show user message in terminal immediately
     appendLog(sessionId, { type: "user", raw: { text }, session_id: sessionId });
+    // Optimistic: mark as running so UI shows activity
+    updateStatus(sessionId, "running");
     try {
-      const newSessionId = await sendPrompt(sessionId, text);
-      // Backend creates a new session with --resume, navigate to it
-      if (newSessionId && newSessionId !== sessionId) {
-        navigate(`/cc/sessions/${newSessionId}`, { replace: true });
-      }
+      await sendPrompt(sessionId, text);
     } catch { setPrompt(text); } finally { setSending(false); }
   };
 
@@ -115,7 +145,31 @@ export function SessionTerminalPage({ sessionId }: SessionTerminalPageProps) {
             <span className="font-medium truncate">{session?.project_name ?? session?.project_id ?? "Project"}</span>
             <span className="text-slate-600">|</span>
             <span className="text-slate-400">Session:</span>
-            <span className="font-medium truncate">{session?.label ?? sessionId.slice(0, 8)}</span>
+            {editing ? (
+              <div className="flex items-center gap-1">
+                <input
+                  autoFocus
+                  className="bg-slate-800 border border-slate-600 rounded px-1.5 py-0.5 text-sm text-slate-100 w-48 outline-none focus:border-blue-500"
+                  value={editLabel}
+                  onChange={(e) => setEditLabel(e.target.value)}
+                  onKeyDown={(e) => { if (e.key === "Enter") handleSaveRename(); if (e.key === "Escape") setEditing(false); }}
+                  onBlur={handleSaveRename}
+                />
+                <Button variant="ghost" size="icon" className="h-5 w-5 text-emerald-400 hover:text-emerald-300" onClick={handleSaveRename}>
+                  <Check className="h-3 w-3" />
+                </Button>
+                <Button variant="ghost" size="icon" className="h-5 w-5 text-slate-400 hover:text-slate-300" onClick={() => setEditing(false)}>
+                  <X className="h-3 w-3" />
+                </Button>
+              </div>
+            ) : (
+              <span className="font-medium truncate cursor-pointer hover:text-blue-400 transition-colors" onClick={handleStartRename} title="Click to rename">
+                {session?.label ?? sessionId.slice(0, 8)}
+              </span>
+            )}
+            <Button variant="ghost" size="icon" className="h-5 w-5 text-slate-500 hover:text-slate-300" onClick={handleStartRename} title="Rename session">
+              <Pencil className="h-3 w-3" />
+            </Button>
           </div>
           <div className="flex items-center gap-3 shrink-0">
             <AgentStatusIndicator status={agentStatus} />
@@ -128,6 +182,23 @@ export function SessionTerminalPage({ sessionId }: SessionTerminalPageProps) {
             <span className="text-xs text-slate-500 font-mono">
               {latestTokens.input.toLocaleString()}↑ {latestTokens.output.toLocaleString()}↓ · ${totalCost.toFixed(4)}
             </span>
+            <div className="relative">
+              {showDeleteConfirm ? (
+                <div className="flex items-center gap-1 bg-slate-800 border border-red-800 rounded px-2 py-1">
+                  <span className="text-xs text-red-400">Delete?</span>
+                  <Button variant="ghost" size="icon" className="h-5 w-5 text-red-400 hover:text-red-300" onClick={handleDelete}>
+                    <Check className="h-3 w-3" />
+                  </Button>
+                  <Button variant="ghost" size="icon" className="h-5 w-5 text-slate-400 hover:text-slate-300" onClick={() => setShowDeleteConfirm(false)}>
+                    <X className="h-3 w-3" />
+                  </Button>
+                </div>
+              ) : (
+                <Button variant="ghost" size="icon" className="h-6 w-6 text-slate-500 hover:text-red-400" onClick={() => setShowDeleteConfirm(true)} title="Delete session">
+                  <Trash2 className="h-3.5 w-3.5" />
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       </div>
@@ -154,7 +225,6 @@ export function SessionTerminalPage({ sessionId }: SessionTerminalPageProps) {
         isRunning={isRunning}
         canSend={canSendPrompt}
         sending={sending}
-        canResume={canResume}
       />
     </div>
   );

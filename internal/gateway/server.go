@@ -42,7 +42,7 @@ type Server struct {
 	providersHandler        *httpapi.ProvidersHandler        // managed mode: provider CRUD API
 	delegationsHandler      *httpapi.DelegationsHandler      // managed mode: delegation history API
 	builtinToolsHandler     *httpapi.BuiltinToolsHandler     // managed mode: builtin tool management API
-	claudeCodeHandler       *httpapi.ClaudeCodeHandler       // managed mode: Claude Code orchestration API
+	projectsHandler         *httpapi.ProjectsHandler         // managed mode: projects orchestration API
 	agentStore         store.AgentStore             // managed mode: for context injection in tools_invoke
 
 	upgrader    websocket.Upgrader
@@ -191,9 +191,9 @@ func (s *Server) BuildMux() *http.ServeMux {
 		s.builtinToolsHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: Claude Code orchestration API
-	if s.claudeCodeHandler != nil {
-		s.claudeCodeHandler.RegisterRoutes(mux)
+	// Managed mode: projects orchestration API
+	if s.projectsHandler != nil {
+		s.projectsHandler.RegisterRoutes(mux)
 	}
 
 	s.mux = mux
@@ -306,8 +306,8 @@ func (s *Server) SetBuiltinToolsHandler(h *httpapi.BuiltinToolsHandler) {
 	s.builtinToolsHandler = h
 }
 
-// SetClaudeCodeHandler sets the managed-mode Claude Code orchestration handler.
-func (s *Server) SetClaudeCodeHandler(h *httpapi.ClaudeCodeHandler) { s.claudeCodeHandler = h }
+// SetProjectsHandler sets the managed-mode projects orchestration handler.
+func (s *Server) SetProjectsHandler(h *httpapi.ProjectsHandler) { s.projectsHandler = h }
 
 // SetAgentStore sets the agent store for context injection in tools_invoke.
 func (s *Server) SetAgentStore(as store.AgentStore) { s.agentStore = as }

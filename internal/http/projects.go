@@ -12,34 +12,36 @@ import (
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
 
-// ClaudeCodeHandler handles Claude Code project and session endpoints.
-type ClaudeCodeHandler struct {
-	store   store.CCStore
+// ProjectsHandler handles project and session endpoints.
+type ProjectsHandler struct {
+	store   store.ProjectStore
 	manager *claudecode.ProcessManager
 	token   string
 	msgBus  *bus.MessageBus
 	isOwner func(string) bool
 }
 
-func NewClaudeCodeHandler(ccStore store.CCStore, manager *claudecode.ProcessManager, token string, msgBus *bus.MessageBus, isOwner func(string) bool) *ClaudeCodeHandler {
-	return &ClaudeCodeHandler{store: ccStore, manager: manager, token: token, msgBus: msgBus, isOwner: isOwner}
+func NewProjectsHandler(store store.ProjectStore, manager *claudecode.ProcessManager, token string, msgBus *bus.MessageBus, isOwner func(string) bool) *ProjectsHandler {
+	return &ProjectsHandler{store: store, manager: manager, token: token, msgBus: msgBus, isOwner: isOwner}
 }
 
-func (h *ClaudeCodeHandler) RegisterRoutes(mux *http.ServeMux) {
-	mux.HandleFunc("GET /v1/cc/projects", h.auth(h.handleListProjects))
-	mux.HandleFunc("POST /v1/cc/projects", h.auth(h.handleCreateProject))
-	mux.HandleFunc("GET /v1/cc/projects/{id}", h.auth(h.handleGetProject))
-	mux.HandleFunc("PUT /v1/cc/projects/{id}", h.auth(h.handleUpdateProject))
-	mux.HandleFunc("DELETE /v1/cc/projects/{id}", h.auth(h.handleDeleteProject))
-	mux.HandleFunc("GET /v1/cc/projects/{id}/sessions", h.auth(h.handleListSessions))
-	mux.HandleFunc("POST /v1/cc/projects/{id}/sessions", h.auth(h.handleStartSession))
-	mux.HandleFunc("GET /v1/cc/sessions/{id}", h.auth(h.handleGetSession))
-	mux.HandleFunc("POST /v1/cc/sessions/{id}/prompt", h.auth(h.handleSendPrompt))
-	mux.HandleFunc("POST /v1/cc/sessions/{id}/stop", h.auth(h.handleStopSession))
-	mux.HandleFunc("GET /v1/cc/sessions/{id}/logs", h.auth(h.handleGetLogs))
+func (h *ProjectsHandler) RegisterRoutes(mux *http.ServeMux) {
+	mux.HandleFunc("GET /v1/projects", h.auth(h.handleListProjects))
+	mux.HandleFunc("POST /v1/projects", h.auth(h.handleCreateProject))
+	mux.HandleFunc("GET /v1/projects/{id}", h.auth(h.handleGetProject))
+	mux.HandleFunc("PUT /v1/projects/{id}", h.auth(h.handleUpdateProject))
+	mux.HandleFunc("DELETE /v1/projects/{id}", h.auth(h.handleDeleteProject))
+	mux.HandleFunc("GET /v1/projects/{id}/sessions", h.auth(h.handleListSessions))
+	mux.HandleFunc("POST /v1/projects/{id}/sessions", h.auth(h.handleStartSession))
+	mux.HandleFunc("GET /v1/projects/sessions/{id}", h.auth(h.handleGetSession))
+	mux.HandleFunc("PATCH /v1/projects/sessions/{id}", h.auth(h.handleUpdateSession))
+	mux.HandleFunc("DELETE /v1/projects/sessions/{id}", h.auth(h.handleDeleteSession))
+	mux.HandleFunc("POST /v1/projects/sessions/{id}/prompt", h.auth(h.handleSendPrompt))
+	mux.HandleFunc("POST /v1/projects/sessions/{id}/stop", h.auth(h.handleStopSession))
+	mux.HandleFunc("GET /v1/projects/sessions/{id}/logs", h.auth(h.handleGetLogs))
 }
 
-func (h *ClaudeCodeHandler) auth(next http.HandlerFunc) http.HandlerFunc {
+func (h *ProjectsHandler) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if h.token != "" {
 			if extractBearerToken(r) != h.token {
@@ -58,7 +60,7 @@ func (h *ClaudeCodeHandler) auth(next http.HandlerFunc) http.HandlerFunc {
 
 // --- Projects ---
 
-func (h *ClaudeCodeHandler) handleListProjects(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleListProjects(w http.ResponseWriter, r *http.Request) {
 	// List all active projects (management UI) — no owner filter
 	projects, err := h.store.ListProjects(r.Context(), "")
 	if err != nil {
@@ -66,19 +68,19 @@ func (h *ClaudeCodeHandler) handleListProjects(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if projects == nil {
-		projects = []store.CCProjectData{}
+		projects = []store.ProjectData{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"projects": projects, "count": len(projects)})
 }
 
-func (h *ClaudeCodeHandler) handleCreateProject(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleCreateProject(w http.ResponseWriter, r *http.Request) {
 	userID := store.UserIDFromContext(r.Context())
 	if userID == "" {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "X-GoClaw-User-Id header required"})
 		return
 	}
 
-	var p store.CCProjectData
+	var p store.ProjectData
 	if err := json.NewDecoder(r.Body).Decode(&p); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
 		return
@@ -105,7 +107,7 @@ func (h *ClaudeCodeHandler) handleCreateProject(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusCreated, map[string]any{"project": p})
 }
 
-func (h *ClaudeCodeHandler) handleGetProject(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleGetProject(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
@@ -119,7 +121,7 @@ func (h *ClaudeCodeHandler) handleGetProject(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"project": p})
 }
 
-func (h *ClaudeCodeHandler) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleUpdateProject(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
@@ -160,7 +162,7 @@ func (h *ClaudeCodeHandler) handleUpdateProject(w http.ResponseWriter, r *http.R
 	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *ClaudeCodeHandler) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleDeleteProject(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
@@ -176,7 +178,7 @@ func (h *ClaudeCodeHandler) handleDeleteProject(w http.ResponseWriter, r *http.R
 
 // --- Sessions ---
 
-func (h *ClaudeCodeHandler) handleListSessions(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleListSessions(w http.ResponseWriter, r *http.Request) {
 	projectID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid project id"})
@@ -188,7 +190,7 @@ func (h *ClaudeCodeHandler) handleListSessions(w http.ResponseWriter, r *http.Re
 		return
 	}
 	if sessions == nil {
-		sessions = []store.CCSessionData{}
+		sessions = []store.ProjectSessionData{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"sessions": sessions, "total": total})
 }
@@ -201,7 +203,7 @@ type startSessionReq struct {
 	MaxTurns     int      `json:"max_turns"`
 }
 
-func (h *ClaudeCodeHandler) handleStartSession(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleStartSession(w http.ResponseWriter, r *http.Request) {
 	projectID, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid project id"})
@@ -254,7 +256,7 @@ func (h *ClaudeCodeHandler) handleStartSession(w http.ResponseWriter, r *http.Re
 	writeJSON(w, http.StatusCreated, map[string]any{"session": sess})
 }
 
-func (h *ClaudeCodeHandler) handleGetSession(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleGetSession(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
@@ -269,7 +271,40 @@ func (h *ClaudeCodeHandler) handleGetSession(w http.ResponseWriter, r *http.Requ
 	writeJSON(w, http.StatusOK, map[string]any{"session": sess})
 }
 
-func (h *ClaudeCodeHandler) handleSendPrompt(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleUpdateSession(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	var body struct {
+		Label string `json:"label"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.Label == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "label is required"})
+		return
+	}
+	if err := h.store.UpdateSession(r.Context(), id, map[string]any{"label": body.Label}); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
+}
+
+func (h *ProjectsHandler) handleDeleteSession(w http.ResponseWriter, r *http.Request) {
+	id, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	if err := h.manager.Delete(r.Context(), id); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
+}
+
+func (h *ProjectsHandler) handleSendPrompt(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
@@ -284,15 +319,14 @@ func (h *ClaudeCodeHandler) handleSendPrompt(w http.ResponseWriter, r *http.Requ
 		return
 	}
 
-	newID, err := h.manager.SendPrompt(r.Context(), id, body.Prompt)
-	if err != nil {
+	if err := h.manager.SendPrompt(r.Context(), id, body.Prompt); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]any{"status": "ok", "new_session_id": newID.String()})
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
-func (h *ClaudeCodeHandler) handleStopSession(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleStopSession(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
@@ -305,7 +339,7 @@ func (h *ClaudeCodeHandler) handleStopSession(w http.ResponseWriter, r *http.Req
 	writeJSON(w, http.StatusOK, map[string]string{"status": "stopped"})
 }
 
-func (h *ClaudeCodeHandler) handleGetLogs(w http.ResponseWriter, r *http.Request) {
+func (h *ProjectsHandler) handleGetLogs(w http.ResponseWriter, r *http.Request) {
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
@@ -317,17 +351,17 @@ func (h *ClaudeCodeHandler) handleGetLogs(w http.ResponseWriter, r *http.Request
 		return
 	}
 	if logs == nil {
-		logs = []store.CCSessionLogData{}
+		logs = []store.ProjectSessionLogData{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
 }
 
-func (h *ClaudeCodeHandler) emitCacheInvalidate() {
+func (h *ProjectsHandler) emitCacheInvalidate() {
 	if h.msgBus == nil {
 		return
 	}
 	h.msgBus.Broadcast(bus.Event{
 		Name:    protocol.EventCacheInvalidate,
-		Payload: bus.CacheInvalidatePayload{Kind: "cc"},
+		Payload: bus.CacheInvalidatePayload{Kind: "projects"},
 	})
 }

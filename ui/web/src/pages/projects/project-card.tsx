@@ -1,10 +1,10 @@
 import { Terminal, Folder, Users, Pencil, Trash2 } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
-import type { CCProject } from "@/types/claude-code";
+import type { Project } from "@/types/project";
 
 interface ProjectCardProps {
-  project: CCProject;
+  project: Project;
   activeSessions?: number;
   teamName?: string;
   onClick: () => void;
