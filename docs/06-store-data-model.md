@@ -614,45 +614,54 @@ The Claude Code store manages orchestration of Claude Code CLI processes (manage
 **Indices:**
 - `idx_cc_session_logs_session` on `(session_id, seq)`
 
-### CCStore Interface (15 methods)
+### project_members Schema
+
+| Column | Type | Purpose |
+|--------|------|---------|
+| `id` | UUID | Primary key |
+| `project_id` | UUID | FK → projects(id) ON DELETE CASCADE |
+| `user_id` | VARCHAR(255) | User ID granted access |
+| `role` | VARCHAR(50) | Role (`member` default) |
+| `added_by` | VARCHAR(255) | User who granted access |
+| `created_at` | TIMESTAMPTZ | Grant timestamp |
+
+**Constraints:** UNIQUE(project_id, user_id)
+**Indices:** `idx_project_members_user`, `idx_project_members_project`
+
+### ProjectStore Interface
 
 **Projects:**
-- `CreateProject(ctx, proj *CCProjectData) error`
-- `GetProject(ctx, id uuid.UUID) (*CCProjectData, error)`
-- `ListProjects(ctx, ownerID string) ([]*CCProjectData, error)`
-- `UpdateProject(ctx, id uuid.UUID, patch map[string]any) error`
+- `CreateProject(ctx, p *ProjectData) error`
+- `GetProject(ctx, id uuid.UUID) (*ProjectData, error)`
+- `GetProjectBySlug(ctx, slug string) (*ProjectData, error)`
+- `ListProjects(ctx, ownerID string) ([]ProjectData, error)` — Empty ownerID lists all
+- `ListProjectsByTeam(ctx, teamID uuid.UUID) ([]ProjectData, error)`
+- `ListAccessibleProjects(ctx, userID string) ([]ProjectData, error)` — UNION of owned + member + team-linked
+- `UpdateProject(ctx, id uuid.UUID, updates map[string]any) error`
 - `DeleteProject(ctx, id uuid.UUID) error`
 
+**Members:**
+- `AddMember(ctx, projectID uuid.UUID, userID, role, addedBy string) error` — Upsert (ON CONFLICT update role)
+- `RemoveMember(ctx, projectID uuid.UUID, userID string) error`
+- `ListMembers(ctx, projectID uuid.UUID) ([]ProjectMemberData, error)`
+- `IsMember(ctx, projectID uuid.UUID, userID string) (bool, error)`
+
 **Sessions:**
-- `CreateSession(ctx, sess *CCSessionData) error`
-- `GetSession(ctx, id uuid.UUID) (*CCSessionData, error)`
-- `ListSessions(ctx, projectID uuid.UUID) ([]*CCSessionData, error)`
-- `UpdateSessionStatus(ctx, id uuid.UUID, status string) error`
-- `ActiveSessionCount(ctx, projectID uuid.UUID) (int, error)` — Returns count of sessions with status in (starting, running)
+- `CreateSession`, `GetSession`, `UpdateSession`, `DeleteSession`, `ListSessions`, `ActiveSessionCount`
 
 **Logs:**
-- `LogEvent(ctx, sessionID uuid.UUID, event *CCSessionLogData) error`
-- `GetSessionLogs(ctx, sessionID uuid.UUID) ([]*CCSessionLogData, error)`
-- `DeleteProjectSessions(ctx, projectID uuid.UUID) error` — Cascade delete sessions + logs
-
-### Session Lifecycle
-
-```
-CreateSession()
-  ↓ (status = "starting")
-UpdateSessionStatus(id, "running")
-  ↓ (status = "running", pid populated)
-LogEvent() [multiple calls as stream events arrive]
-  ↓
-UpdateSessionStatus(id, "completed")
-  ↓ (status = "completed", stopped_at set)
-```
+- `AppendLog`, `GetLogs`
 
 ### Access Control
 
-- Projects scoped by `owner_id` (user_id)
-- Team-associated projects accessible to team members via `team_id`
-- HTTP API and WebSocket RPC enforce owner/team membership checks
+4-level priority check enforced on both HTTP and WebSocket:
+
+1. **System owner** (`isOwner` from gateway config) → full access
+2. **Project owner** (`project.owner_id == userID`) → full access
+3. **Explicit member** (`project_members` table) → read access
+4. **Team-linked**: project.team_id → `agent_teams.created_by` or `team.settings.allow_user_ids` → read access
+
+Modify operations (update, delete, add/remove members) restricted to project owner + system owner.
 
 ---
 

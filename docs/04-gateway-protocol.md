@@ -287,6 +287,27 @@ flowchart TD
 | `delegations.list` | List delegation history (result truncated to 500 runes) |
 | `delegations.get` | Get delegation detail (result truncated to 8000 runes) |
 
+### Projects (Orchestration)
+
+| Method | Description |
+|--------|-------------|
+| `projects.list` | List accessible projects (filtered by ownership, membership, team) |
+| `projects.create` | Create new project (name, slug, work_dir, config) |
+| `projects.get` | Get project details (access controlled) |
+| `projects.update` | Update project config (owner only) |
+| `projects.delete` | Delete project (owner only, cascades to sessions) |
+| `projects.sessions.list` | List sessions for a project (access controlled) |
+| `projects.sessions.start` | Start new Claude Code CLI session (access controlled) |
+| `projects.sessions.get` | Get session status and metrics (access controlled) |
+| `projects.sessions.prompt` | Send follow-up prompt to running session (access controlled) |
+| `projects.sessions.stop` | Stop running session (access controlled) |
+| `projects.sessions.delete` | Delete session (access controlled) |
+| `projects.sessions.update` | Update session metadata |
+| `projects.sessions.logs` | Get session event logs (access controlled) |
+| `projects.members.list` | List project members (access controlled) |
+| `projects.members.add` | Add member to project (owner only) |
+| `projects.members.remove` | Remove member from project (owner only) |
+
 ### Other
 
 | Method | Description |
@@ -400,6 +421,27 @@ All managed endpoints require `Authorization: Bearer <token>` and `X-GoClaw-User
 | GET | `/v1/delegations` | List delegation history (full records, paginated) |
 | GET | `/v1/delegations/{id}` | Get delegation detail |
 
+**Projects** (`/v1/projects`, `/v1/project-sessions`):
+
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/v1/projects` | List accessible projects (filtered by access) |
+| POST | `/v1/projects` | Create new project |
+| GET | `/v1/projects/{id}` | Get project details (access controlled) |
+| PUT | `/v1/projects/{id}` | Update project config (owner only) |
+| DELETE | `/v1/projects/{id}` | Delete project (owner only) |
+| GET | `/v1/projects/{id}/sessions` | List project sessions (access controlled) |
+| POST | `/v1/projects/{id}/sessions` | Start new session (access controlled) |
+| GET | `/v1/projects/{id}/members` | List project members (access controlled) |
+| POST | `/v1/projects/{id}/members` | Add member (owner only) |
+| DELETE | `/v1/projects/{id}/members/{user_id}` | Remove member (owner only) |
+| GET | `/v1/project-sessions/{id}` | Get session status (access controlled) |
+| PATCH | `/v1/project-sessions/{id}` | Update session metadata |
+| DELETE | `/v1/project-sessions/{id}` | Delete session |
+| POST | `/v1/project-sessions/{id}/prompt` | Send prompt to session (access controlled) |
+| POST | `/v1/project-sessions/{id}/stop` | Stop running session (access controlled) |
+| GET | `/v1/project-sessions/{id}/logs` | Get session event logs (access controlled) |
+
 **Skills** (`/v1/skills`):
 
 | Method | Path | Description |
@@ -486,6 +528,8 @@ Error responses include `retryable` (boolean) and `retryAfterMs` (integer) field
 | `internal/http/skills.go` | Skills HTTP handlers (managed mode) |
 | `internal/http/traces.go` | Traces HTTP handlers (managed mode) |
 | `internal/http/delegations.go` | Delegation history HTTP handlers |
+| `internal/http/projects.go` | Projects orchestration HTTP handlers |
+| `internal/gateway/methods/projects.go` | projects.* WebSocket RPC handlers |
 | `internal/http/summoner.go` | LLM-powered agent setup (XML parsing, context file generation) |
 | `internal/http/auth.go` | Bearer token authentication, timing-safe comparison |
 | `internal/permissions/policy.go` | PolicyEngine: role hierarchy, method-to-role mapping |

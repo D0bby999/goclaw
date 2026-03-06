@@ -4,6 +4,22 @@ All notable changes to GoClaw project. Format: YYYY-MM-DD | Type | Brief descrip
 
 ## 2026
 
+### 2026-03-07
+
+**feat:** Project Access Control for Team Members
+
+- New `project_members` table (migration 000013) for explicit project access grants
+- 4-level access check: system owner → project owner → explicit member → team-linked access
+- `ListAccessibleProjects` store method: UNION of owned + member + team-linked projects
+- Member management: `AddMember`, `RemoveMember`, `ListMembers`, `IsMember` store methods
+- HTTP API: 3 new endpoints (`GET/POST/DELETE /v1/projects/{id}/members`)
+- WebSocket RPC: 3 new methods (`projects.members.list/add/remove`)
+- Access control enforced on all 16 project/session HTTP handlers and 16 WS RPC handlers
+- `canAccess()` (read) and `canModify()` (owner-only) helpers in both HTTP and WS layers
+- `ListProjects("")` fixed to return all active projects (system owner / management UI)
+- New `ErrForbidden` protocol error code
+- Files: 2 migrations, updated project_store.go, pg/project_store.go, http/projects.go, methods/projects.go, gateway.go, protocol/methods.go, protocol/errors.go
+
 ### 2026-03-05
 
 **feat:** Claude Code Orchestration — process manager + HTTP/WebSocket APIs for Claude Code CLI
