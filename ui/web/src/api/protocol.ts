@@ -141,6 +141,12 @@ export const Methods = {
   DELEGATIONS_LIST: "delegations.list",
   DELEGATIONS_GET: "delegations.get",
 
+  // Scraper cookies
+  SCRAPER_COOKIES_LIST: "scraper.cookies.list",
+  SCRAPER_COOKIES_SET: "scraper.cookies.set",
+  SCRAPER_COOKIES_DELETE: "scraper.cookies.delete",
+  SCRAPER_COOKIES_LOGIN: "scraper.cookies.login",
+
   // Phase 3+ - NICE TO HAVE
   LOGS_TAIL: "logs.tail",
   HEARTBEAT: "heartbeat",

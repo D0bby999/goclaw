@@ -18,6 +18,7 @@ import { CronSection } from "./sections/cron-section";
 import { TelemetrySection } from "./sections/telemetry-section";
 import { BindingsSection } from "./sections/bindings-section";
 import { QuotaSection } from "./sections/quota-section";
+import { ScrapersSection } from "./sections/scrapers-section";
 
 export function ConfigPage() {
   const { config, hash, loading, saving, refresh, patch } = useConfig();
@@ -97,6 +98,7 @@ export function ConfigPage() {
           <TabsTrigger value="agents">Agents</TabsTrigger>
           <TabsTrigger value="sessions">Sessions</TabsTrigger>
           <TabsTrigger value="tools">Tools</TabsTrigger>
+          <TabsTrigger value="scrapers">Scrapers</TabsTrigger>
           <TabsTrigger value="advanced">Advanced</TabsTrigger>
         </TabsList>
 
@@ -138,6 +140,10 @@ export function ConfigPage() {
             onSave={(v) => patch({ tools: v })}
             saving={saving}
           />
+        </TabsContent>
+
+        <TabsContent value="scrapers" className="space-y-4">
+          <ScrapersSection />
         </TabsContent>
 
         <TabsContent value="advanced" className="space-y-4">

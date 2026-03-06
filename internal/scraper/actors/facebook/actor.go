@@ -48,7 +48,7 @@ func NewActor(input map[string]any, client *httpclient.Client) (*FacebookActor, 
 func (a *FacebookActor) Initialize(ctx context.Context) error {
 	cookies := strings.TrimSpace(a.input.Cookies)
 	if cookies == "" {
-		return fmt.Errorf("facebook requires cookies (c_user + xs)")
+		return fmt.Errorf("facebook requires cookies (c_user + xs). Configure cookies in Settings > Scrapers")
 	}
 
 	chromePath := "/Applications/Google Chrome.app/Contents/MacOS/Google Chrome"

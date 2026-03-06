@@ -8,11 +8,13 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway/methods"
+	"github.com/nextlevelbuilder/goclaw/internal/scraper"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
+	"github.com/nextlevelbuilder/goclaw/pkg/browser"
 )
 
-func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore store.SessionStore, cronStore store.CronStore, pairingStore store.PairingStore, cfg *config.Config, cfgPath, workspace, dataDir string, msgBus *bus.MessageBus, execApprovalMgr *tools.ExecApprovalManager, agentStore store.AgentStore, skillStore store.SkillStore, configSecretsStore store.ConfigSecretsStore, teamStore store.TeamStore, contextFileInterceptor *tools.ContextFileInterceptor, logTee *gateway.LogTee) *methods.PairingMethods {
+func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore store.SessionStore, cronStore store.CronStore, pairingStore store.PairingStore, cfg *config.Config, cfgPath, workspace, dataDir string, msgBus *bus.MessageBus, execApprovalMgr *tools.ExecApprovalManager, agentStore store.AgentStore, skillStore store.SkillStore, configSecretsStore store.ConfigSecretsStore, teamStore store.TeamStore, contextFileInterceptor *tools.ContextFileInterceptor, logTee *gateway.LogTee, browserMgr *browser.Manager, cookieStore *scraper.ScraperCookieStore) *methods.PairingMethods {
 	router := server.Router()
 
 	// Phase 1: Core methods
@@ -47,6 +49,11 @@ func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore 
 	// Phase 4: Delegation history
 	if teamStore != nil {
 		methods.NewDelegationsMethods(teamStore).Register(router)
+	}
+
+	// Scraper cookie management
+	if cookieStore != nil {
+		methods.NewScraperCookieMethods(cookieStore, browserMgr).Register(router)
 	}
 
 	slog.Info("registered all RPC methods",

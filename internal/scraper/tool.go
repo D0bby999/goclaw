@@ -14,12 +14,17 @@ import (
 )
 
 // ScraperTool implements tools.Tool for the composite scraper.
-type ScraperTool struct{}
-
-// NewScraperTool creates the scraper tool.
-func NewScraperTool() *ScraperTool {
-	return &ScraperTool{}
+type ScraperTool struct {
+	cookieStore *ScraperCookieStore // optional; auto-loads cookies when input omits them
 }
+
+// NewScraperTool creates the scraper tool with an optional cookie store.
+func NewScraperTool(cookieStore *ScraperCookieStore) *ScraperTool {
+	return &ScraperTool{cookieStore: cookieStore}
+}
+
+// SetCookieStore wires the cookie store after construction (deferred init).
+func (t *ScraperTool) SetCookieStore(cs *ScraperCookieStore) { t.cookieStore = cs }
 
 func (t *ScraperTool) Name() string { return "scraper" }
 
@@ -75,6 +80,25 @@ func (t *ScraperTool) Execute(ctx context.Context, args map[string]interface{}) 
 		return tools.ErrorResult("missing required parameter 'input'")
 	}
 
+
+	// Auto-load cookies from store if not provided in input.
+	if t.cookieStore != nil {
+		cookiePlatform := ""
+		switch actorName {
+		case "facebook":
+			cookiePlatform = "facebook"
+		case "instagram", "instagram_reel":
+			cookiePlatform = "instagram"
+		}
+		if cookiePlatform != "" {
+			if cookies, _ := input["cookies"].(string); strings.TrimSpace(cookies) == "" {
+				if stored, err := t.cookieStore.GetDefault(ctx, cookiePlatform); err == nil && stored != "" {
+					input["cookies"] = stored
+					slog.Info("scraper: auto-loaded cookies from store", "platform", cookiePlatform)
+				}
+			}
+		}
+	}
 
 	// Create a stealth HTTP client with optional proxy support.
 	opts := []httpclient.Option{httpclient.WithTimeout(5 * time.Minute)}

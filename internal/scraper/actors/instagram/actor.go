@@ -52,7 +52,7 @@ func NewActor(input map[string]any, client *httpclient.Client) (*InstagramActor,
 func (a *InstagramActor) Initialize(ctx context.Context) error {
 	sessionID := strings.TrimSpace(a.input.Cookies)
 	if sessionID == "" {
-		return fmt.Errorf("instagram requires cookies (sessionid)")
+		return fmt.Errorf("instagram requires cookies (sessionid). Configure cookies in Settings > Scrapers")
 	}
 	sessionID = strings.TrimPrefix(sessionID, "sessionid=")
 

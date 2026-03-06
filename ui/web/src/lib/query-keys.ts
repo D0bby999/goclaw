@@ -57,6 +57,9 @@ export const queryKeys = {
     all: ["teams"] as const,
     detail: (id: string) => ["teams", id] as const,
   },
+  scraperCookies: {
+    all: ["scraperCookies"] as const,
+  },
   cc: {
     projects: ["cc", "projects"] as const,
     project: (id: string) => ["cc", "projects", id] as const,
