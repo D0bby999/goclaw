@@ -134,6 +134,17 @@ const (
 	MethodProjectSessionsDelete = "projects.sessions.delete"
 	MethodProjectSessionsUpdate = "projects.sessions.update"
 	MethodProjectSessionsLogs   = "projects.sessions.logs"
+	MethodProjectMembersList    = "projects.members.list"
+	MethodProjectMembersAdd     = "projects.members.add"
+	MethodProjectMembersRemove  = "projects.members.remove"
+)
+
+// Scraper cookie management
+const (
+	MethodScraperCookiesList  = "scraper.cookies.list"
+	MethodScraperCookiesSet   = "scraper.cookies.set"
+	MethodScraperCookiesDelete = "scraper.cookies.delete"
+	MethodScraperCookiesLogin  = "scraper.cookies.login"
 )
 
 // Phase 3+ - NICE TO HAVE methods

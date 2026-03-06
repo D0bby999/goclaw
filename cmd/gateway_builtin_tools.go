@@ -25,6 +25,7 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 		},
 
 		// web
+		{Name: "scraper", DisplayName: "Scraper", Description: "Scrape and extract structured content from web pages with automatic pagination", Category: "web", Enabled: true},
 		{Name: "web_search", DisplayName: "Web Search", Description: "Search the web using Brave or DuckDuckGo", Category: "web", Enabled: true,
 			Metadata: json.RawMessage(`{"config_hint":"Config → Tools → Web Search"}`),
 		},

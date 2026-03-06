@@ -68,6 +68,16 @@ type ProjectSessionLogData struct {
 	CreatedAt time.Time       `json:"created_at"`
 }
 
+// ProjectMemberData represents a project member (explicit access grant).
+type ProjectMemberData struct {
+	ID        uuid.UUID `json:"id"`
+	ProjectID uuid.UUID `json:"project_id"`
+	UserID    string    `json:"user_id"`
+	Role      string    `json:"role"`
+	AddedBy   string    `json:"added_by"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // ProjectStore manages projects, sessions, and logs.
 type ProjectStore interface {
 	// Projects
@@ -78,6 +88,13 @@ type ProjectStore interface {
 	DeleteProject(ctx context.Context, id uuid.UUID) error
 	ListProjects(ctx context.Context, ownerID string) ([]ProjectData, error)
 	ListProjectsByTeam(ctx context.Context, teamID uuid.UUID) ([]ProjectData, error)
+	ListAccessibleProjects(ctx context.Context, userID string) ([]ProjectData, error)
+
+	// Members
+	AddMember(ctx context.Context, projectID uuid.UUID, userID, role, addedBy string) error
+	RemoveMember(ctx context.Context, projectID uuid.UUID, userID string) error
+	ListMembers(ctx context.Context, projectID uuid.UUID) ([]ProjectMemberData, error)
+	IsMember(ctx context.Context, projectID uuid.UUID, userID string) (bool, error)
 
 	// Sessions
 	CreateSession(ctx context.Context, s *ProjectSessionData) error

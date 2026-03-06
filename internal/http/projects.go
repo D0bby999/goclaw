@@ -3,6 +3,7 @@ package http
 import (
 	"encoding/json"
 	"net/http"
+	"slices"
 
 	"github.com/google/uuid"
 
@@ -14,15 +15,16 @@ import (
 
 // ProjectsHandler handles project and session endpoints.
 type ProjectsHandler struct {
-	store   store.ProjectStore
-	manager *claudecode.ProcessManager
-	token   string
-	msgBus  *bus.MessageBus
-	isOwner func(string) bool
+	store     store.ProjectStore
+	manager   *claudecode.ProcessManager
+	token     string
+	msgBus    *bus.MessageBus
+	isOwner   func(string) bool
+	teamStore store.TeamStore
 }
 
-func NewProjectsHandler(store store.ProjectStore, manager *claudecode.ProcessManager, token string, msgBus *bus.MessageBus, isOwner func(string) bool) *ProjectsHandler {
-	return &ProjectsHandler{store: store, manager: manager, token: token, msgBus: msgBus, isOwner: isOwner}
+func NewProjectsHandler(store store.ProjectStore, manager *claudecode.ProcessManager, token string, msgBus *bus.MessageBus, isOwner func(string) bool, teamStore store.TeamStore) *ProjectsHandler {
+	return &ProjectsHandler{store: store, manager: manager, token: token, msgBus: msgBus, isOwner: isOwner, teamStore: teamStore}
 }
 
 func (h *ProjectsHandler) RegisterRoutes(mux *http.ServeMux) {
@@ -33,12 +35,16 @@ func (h *ProjectsHandler) RegisterRoutes(mux *http.ServeMux) {
 	mux.HandleFunc("DELETE /v1/projects/{id}", h.auth(h.handleDeleteProject))
 	mux.HandleFunc("GET /v1/projects/{id}/sessions", h.auth(h.handleListSessions))
 	mux.HandleFunc("POST /v1/projects/{id}/sessions", h.auth(h.handleStartSession))
-	mux.HandleFunc("GET /v1/projects/sessions/{id}", h.auth(h.handleGetSession))
-	mux.HandleFunc("PATCH /v1/projects/sessions/{id}", h.auth(h.handleUpdateSession))
-	mux.HandleFunc("DELETE /v1/projects/sessions/{id}", h.auth(h.handleDeleteSession))
-	mux.HandleFunc("POST /v1/projects/sessions/{id}/prompt", h.auth(h.handleSendPrompt))
-	mux.HandleFunc("POST /v1/projects/sessions/{id}/stop", h.auth(h.handleStopSession))
-	mux.HandleFunc("GET /v1/projects/sessions/{id}/logs", h.auth(h.handleGetLogs))
+	mux.HandleFunc("GET /v1/project-sessions/{id}", h.auth(h.handleGetSession))
+	mux.HandleFunc("PATCH /v1/project-sessions/{id}", h.auth(h.handleUpdateSession))
+	mux.HandleFunc("DELETE /v1/project-sessions/{id}", h.auth(h.handleDeleteSession))
+	mux.HandleFunc("POST /v1/project-sessions/{id}/prompt", h.auth(h.handleSendPrompt))
+	mux.HandleFunc("POST /v1/project-sessions/{id}/stop", h.auth(h.handleStopSession))
+	mux.HandleFunc("GET /v1/project-sessions/{id}/logs", h.auth(h.handleGetLogs))
+	// Member management
+	mux.HandleFunc("GET /v1/projects/{id}/members", h.auth(h.handleListMembers))
+	mux.HandleFunc("POST /v1/projects/{id}/members", h.auth(h.handleAddMember))
+	mux.HandleFunc("DELETE /v1/projects/{id}/members/{user_id}", h.auth(h.handleRemoveMember))
 }
 
 func (h *ProjectsHandler) auth(next http.HandlerFunc) http.HandlerFunc {
@@ -58,11 +64,63 @@ func (h *ProjectsHandler) auth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
+// canAccess checks if a user can access a project (read).
+func (h *ProjectsHandler) canAccess(r *http.Request, project *store.ProjectData) bool {
+	userID := store.UserIDFromContext(r.Context())
+	// 1. System owner
+	if h.isOwner(userID) {
+		return true
+	}
+	// 2. Project owner
+	if project.OwnerID == userID {
+		return true
+	}
+	// 3. Explicit member
+	if ok, _ := h.store.IsMember(r.Context(), project.ID, userID); ok {
+		return true
+	}
+	// 4. Team-linked access
+	if project.TeamID != nil && h.teamStore != nil {
+		team, err := h.teamStore.GetTeam(r.Context(), *project.TeamID)
+		if err == nil && team != nil {
+			if team.CreatedBy == userID {
+				return true
+			}
+			var settings struct {
+				AllowUserIDs []string `json:"allow_user_ids"`
+			}
+			if team.Settings != nil {
+				_ = json.Unmarshal(team.Settings, &settings)
+			}
+			if slices.Contains(settings.AllowUserIDs, userID) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+// canModify checks if a user can modify a project (owner or system owner only).
+func (h *ProjectsHandler) canModify(r *http.Request, project *store.ProjectData) bool {
+	userID := store.UserIDFromContext(r.Context())
+	return h.isOwner(userID) || project.OwnerID == userID
+}
+
 // --- Projects ---
 
 func (h *ProjectsHandler) handleListProjects(w http.ResponseWriter, r *http.Request) {
-	// List all active projects (management UI) — no owner filter
-	projects, err := h.store.ListProjects(r.Context(), "")
+	userID := store.UserIDFromContext(r.Context())
+
+	var projects []store.ProjectData
+	var err error
+	if h.isOwner(userID) {
+		// System owner sees all active projects
+		projects, err = h.store.ListProjects(r.Context(), "")
+	} else if userID != "" {
+		projects, err = h.store.ListAccessibleProjects(r.Context(), userID)
+	} else {
+		projects = []store.ProjectData{}
+	}
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -118,6 +176,10 @@ func (h *ProjectsHandler) handleGetProject(w http.ResponseWriter, r *http.Reques
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
 		return
 	}
+	if !h.canAccess(r, p) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+		return
+	}
 	writeJSON(w, http.StatusOK, map[string]any{"project": p})
 }
 
@@ -125,6 +187,16 @@ func (h *ProjectsHandler) handleUpdateProject(w http.ResponseWriter, r *http.Req
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+
+	p, err := h.store.GetProject(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+	if !h.canModify(r, p) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only project owner can update"})
 		return
 	}
 
@@ -168,6 +240,17 @@ func (h *ProjectsHandler) handleDeleteProject(w http.ResponseWriter, r *http.Req
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
+
+	p, err := h.store.GetProject(r.Context(), id)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+	if !h.canModify(r, p) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only project owner can delete"})
+		return
+	}
+
 	if err := h.store.DeleteProject(r.Context(), id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -184,6 +267,17 @@ func (h *ProjectsHandler) handleListSessions(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid project id"})
 		return
 	}
+
+	p, err := h.store.GetProject(r.Context(), projectID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+	if !h.canAccess(r, p) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+		return
+	}
+
 	sessions, total, err := h.store.ListSessions(r.Context(), projectID, 50, 0)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -226,6 +320,10 @@ func (h *ProjectsHandler) handleStartSession(w http.ResponseWriter, r *http.Requ
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
 		return
 	}
+	if !h.canAccess(r, proj) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+		return
+	}
 
 	// Parse allowed tools from project if not overridden
 	allowedTools := req.AllowedTools
@@ -266,6 +364,12 @@ func (h *ProjectsHandler) handleGetSession(w http.ResponseWriter, r *http.Reques
 	if err != nil {
 		writeJSON(w, http.StatusNotFound, map[string]string{"error": "session not found"})
 		return
+	}
+	if proj, pErr := h.store.GetProject(r.Context(), sess.ProjectID); pErr == nil {
+		if !h.canAccess(r, proj) {
+			writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+			return
+		}
 	}
 	sess.ProjectName = "" // re-fetch joined if needed
 	writeJSON(w, http.StatusOK, map[string]any{"session": sess})
@@ -311,6 +415,15 @@ func (h *ProjectsHandler) handleSendPrompt(w http.ResponseWriter, r *http.Reques
 		return
 	}
 
+	if sess, sErr := h.store.GetSession(r.Context(), id); sErr == nil {
+		if proj, pErr := h.store.GetProject(r.Context(), sess.ProjectID); pErr == nil {
+			if !h.canAccess(r, proj) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+				return
+			}
+		}
+	}
+
 	var body struct {
 		Prompt string `json:"prompt"`
 	}
@@ -332,6 +445,16 @@ func (h *ProjectsHandler) handleStopSession(w http.ResponseWriter, r *http.Reque
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
+
+	if sess, sErr := h.store.GetSession(r.Context(), id); sErr == nil {
+		if proj, pErr := h.store.GetProject(r.Context(), sess.ProjectID); pErr == nil {
+			if !h.canAccess(r, proj) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+				return
+			}
+		}
+	}
+
 	if err := h.manager.Stop(r.Context(), id); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return
@@ -345,6 +468,16 @@ func (h *ProjectsHandler) handleGetLogs(w http.ResponseWriter, r *http.Request) 
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
 		return
 	}
+
+	if sess, sErr := h.store.GetSession(r.Context(), id); sErr == nil {
+		if proj, pErr := h.store.GetProject(r.Context(), sess.ProjectID); pErr == nil {
+			if !h.canAccess(r, proj) {
+				writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+				return
+			}
+		}
+	}
+
 	logs, err := h.store.GetLogs(r.Context(), id, -1, 500)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
@@ -354,6 +487,98 @@ func (h *ProjectsHandler) handleGetLogs(w http.ResponseWriter, r *http.Request) 
 		logs = []store.ProjectSessionLogData{}
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"logs": logs})
+}
+
+// --- Members ---
+
+func (h *ProjectsHandler) handleListMembers(w http.ResponseWriter, r *http.Request) {
+	projectID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	p, err := h.store.GetProject(r.Context(), projectID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+	if !h.canAccess(r, p) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "access denied"})
+		return
+	}
+	members, err := h.store.ListMembers(r.Context(), projectID)
+	if err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	if members == nil {
+		members = []store.ProjectMemberData{}
+	}
+	writeJSON(w, http.StatusOK, map[string]any{"members": members})
+}
+
+func (h *ProjectsHandler) handleAddMember(w http.ResponseWriter, r *http.Request) {
+	projectID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	p, err := h.store.GetProject(r.Context(), projectID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+	if !h.canModify(r, p) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only project owner can add members"})
+		return
+	}
+
+	var body struct {
+		UserID string `json:"user_id"`
+		Role   string `json:"role"`
+	}
+	if err := json.NewDecoder(r.Body).Decode(&body); err != nil || body.UserID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_id is required"})
+		return
+	}
+	if body.Role == "" {
+		body.Role = "member"
+	}
+
+	addedBy := store.UserIDFromContext(r.Context())
+	if err := h.store.AddMember(r.Context(), projectID, body.UserID, body.Role, addedBy); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusCreated, map[string]string{"status": "ok"})
+}
+
+func (h *ProjectsHandler) handleRemoveMember(w http.ResponseWriter, r *http.Request) {
+	projectID, err := uuid.Parse(r.PathValue("id"))
+	if err != nil {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid id"})
+		return
+	}
+	p, err := h.store.GetProject(r.Context(), projectID)
+	if err != nil {
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": "project not found"})
+		return
+	}
+	if !h.canModify(r, p) {
+		writeJSON(w, http.StatusForbidden, map[string]string{"error": "only project owner can remove members"})
+		return
+	}
+
+	memberUserID := r.PathValue("user_id")
+	if memberUserID == "" {
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "user_id is required"})
+		return
+	}
+	if err := h.store.RemoveMember(r.Context(), projectID, memberUserID); err != nil {
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
+		return
+	}
+	writeJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 }
 
 func (h *ProjectsHandler) emitCacheInvalidate() {

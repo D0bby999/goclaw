@@ -93,8 +93,16 @@ func (s *PGProjectStore) DeleteProject(ctx context.Context, id uuid.UUID) error 
 }
 
 func (s *PGProjectStore) ListProjects(ctx context.Context, ownerID string) ([]store.ProjectData, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+projectSelectCols+` FROM projects WHERE owner_id = $1 AND status = 'active' ORDER BY created_at DESC`, ownerID)
+	var rows *sql.Rows
+	var err error
+	if ownerID == "" {
+		// Empty ownerID → list all active projects (system owner / management UI)
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT `+projectSelectCols+` FROM projects WHERE status = 'active' ORDER BY created_at DESC`)
+	} else {
+		rows, err = s.db.QueryContext(ctx,
+			`SELECT `+projectSelectCols+` FROM projects WHERE owner_id = $1 AND status = 'active' ORDER BY created_at DESC`, ownerID)
+	}
 	if err != nil {
 		return nil, err
 	}
@@ -162,6 +170,75 @@ func (s *PGProjectStore) scanProjectRows(rows *sql.Rows) ([]store.ProjectData, e
 		projects = append(projects, p)
 	}
 	return projects, rows.Err()
+}
+
+// ============================================================
+// Members
+// ============================================================
+
+func (s *PGProjectStore) AddMember(ctx context.Context, projectID uuid.UUID, userID, role, addedBy string) error {
+	id := store.GenNewID()
+	_, err := s.db.ExecContext(ctx,
+		`INSERT INTO project_members (id, project_id, user_id, role, added_by)
+		 VALUES ($1, $2, $3, $4, $5)
+		 ON CONFLICT (project_id, user_id) DO UPDATE SET role = EXCLUDED.role`,
+		id, projectID, userID, role, addedBy,
+	)
+	return err
+}
+
+func (s *PGProjectStore) RemoveMember(ctx context.Context, projectID uuid.UUID, userID string) error {
+	_, err := s.db.ExecContext(ctx,
+		`DELETE FROM project_members WHERE project_id = $1 AND user_id = $2`,
+		projectID, userID,
+	)
+	return err
+}
+
+func (s *PGProjectStore) ListMembers(ctx context.Context, projectID uuid.UUID) ([]store.ProjectMemberData, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT id, project_id, user_id, role, added_by, created_at
+		 FROM project_members WHERE project_id = $1
+		 ORDER BY created_at ASC`, projectID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var members []store.ProjectMemberData
+	for rows.Next() {
+		var m store.ProjectMemberData
+		if err := rows.Scan(&m.ID, &m.ProjectID, &m.UserID, &m.Role, &m.AddedBy, &m.CreatedAt); err != nil {
+			return nil, err
+		}
+		members = append(members, m)
+	}
+	return members, rows.Err()
+}
+
+func (s *PGProjectStore) IsMember(ctx context.Context, projectID uuid.UUID, userID string) (bool, error) {
+	var exists bool
+	err := s.db.QueryRowContext(ctx,
+		`SELECT EXISTS(SELECT 1 FROM project_members WHERE project_id = $1 AND user_id = $2)`,
+		projectID, userID,
+	).Scan(&exists)
+	return exists, err
+}
+
+func (s *PGProjectStore) ListAccessibleProjects(ctx context.Context, userID string) ([]store.ProjectData, error) {
+	rows, err := s.db.QueryContext(ctx,
+		`SELECT DISTINCT `+projectSelectCols+` FROM projects p
+		 WHERE p.status = 'active' AND (
+		     p.owner_id = $1
+		     OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $1)
+		     OR p.team_id IN (SELECT id FROM agent_teams WHERE created_by = $1 AND status = 'active')
+		 )
+		 ORDER BY p.created_at DESC`, userID)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+	return s.scanProjectRows(rows)
 }
 
 // ============================================================

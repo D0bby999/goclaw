@@ -187,7 +187,9 @@ func runGateway() {
 	slog.Info("web_fetch tool enabled", "policy", cfg.Tools.WebFetch.Policy, "blocked", len(cfg.Tools.WebFetch.BlockedDomains))
 
 	// Scraper tool (web scraping + social platform actors)
-	toolsReg.Register(scraper.NewScraperTool())
+	// Cookie store is wired after pgStores creation below.
+	scraperTool := scraper.NewScraperTool(nil)
+	toolsReg.Register(scraperTool)
 	slog.Info("scraper tool enabled")
 
 	// Vision fallback tool (for non-vision providers like MiniMax)
@@ -372,6 +374,13 @@ func runGateway() {
 			cfg.ApplyEnvOverrides()
 			slog.Info("config secrets loaded from DB", "count", len(secrets))
 		}
+	}
+
+	// Wire scraper cookie store (deferred — pgStores now available).
+	var scraperCookieStore *scraper.ScraperCookieStore
+	if pgStores.ConfigSecrets != nil {
+		scraperCookieStore = scraper.NewScraperCookieStore(pgStores.ConfigSecrets)
+		scraperTool.SetCookieStore(scraperCookieStore)
 	}
 
 	// Register providers from DB (overrides config providers).
@@ -641,11 +650,11 @@ func runGateway() {
 			})
 		}
 		projectManager := ccpkg.NewProcessManager(pgStores.Projects, projectEventCB)
-		projectsHandler := httpapi.NewProjectsHandler(pgStores.Projects, projectManager, cfg.Gateway.Token, msgBus, permPE.IsOwner)
+		projectsHandler := httpapi.NewProjectsHandler(pgStores.Projects, projectManager, cfg.Gateway.Token, msgBus, permPE.IsOwner, pgStores.Teams)
 		server.SetProjectsHandler(projectsHandler)
 
 		// Register WS RPC methods
-		methods.NewProjectsMethods(pgStores.Projects, projectManager, msgBus).Register(server.Router())
+		methods.NewProjectsMethods(pgStores.Projects, projectManager, msgBus, pgStores.Teams, permPE.IsOwner).Register(server.Router())
 
 		// Store for channel injection and graceful shutdown
 		projectManagerForShutdown = projectManager
@@ -655,7 +664,7 @@ func runGateway() {
 
 	// Register all RPC methods
 	server.SetLogTee(logTee)
-	pairingMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee)
+	pairingMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee, browserMgr, scraperCookieStore)
 
 	// Wire pairing event broadcasts to all WS clients.
 	pairingMethods.SetBroadcaster(server.BroadcastEvent)
