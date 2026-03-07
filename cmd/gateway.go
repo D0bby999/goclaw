@@ -385,7 +385,7 @@ func runGateway() {
 
 	// Register providers from DB (overrides config providers).
 	if pgStores.Providers != nil {
-		registerProvidersFromDB(providerRegistry, pgStores.Providers)
+		registerProvidersFromDB(providerRegistry, pgStores.Providers, pgStores.ConfigSecrets)
 	}
 
 	// Wire embedding provider to PGMemoryStore so IndexDocument generates vectors.
@@ -572,6 +572,7 @@ func runGateway() {
 	server.SetDB(pgStores.DB)
 	server.SetPolicyEngine(permPE)
 	server.SetPairingService(pgStores.Pairing)
+	server.SetOAuthHandler(httpapi.NewOAuthHandler(cfg.Gateway.Token, pgStores.Providers, pgStores.ConfigSecrets, providerRegistry))
 
 	// contextFileInterceptor is created inside wireExtras.
 	// Declared here so it can be passed to registerAllMethods → AgentsMethods

@@ -43,6 +43,7 @@ type Server struct {
 	delegationsHandler      *httpapi.DelegationsHandler      // delegation history API
 	builtinToolsHandler     *httpapi.BuiltinToolsHandler     // builtin tool management API
 	projectsHandler         *httpapi.ProjectsHandler         // projects orchestration API
+	oauthHandler            *httpapi.OAuthHandler            // OAuth endpoints
 	agentStore         store.AgentStore             // for context injection in tools_invoke
 
 	upgrader    websocket.Upgrader
@@ -198,6 +199,11 @@ func (s *Server) BuildMux() *http.ServeMux {
 		s.projectsHandler.RegisterRoutes(mux)
 	}
 
+	// OAuth endpoints (available in all modes)
+	if s.oauthHandler != nil {
+		s.oauthHandler.RegisterRoutes(mux)
+	}
+
 	s.mux = mux
 	return mux
 }
@@ -310,6 +316,9 @@ func (s *Server) SetBuiltinToolsHandler(h *httpapi.BuiltinToolsHandler) {
 
 // SetProjectsHandler sets the managed-mode projects orchestration handler.
 func (s *Server) SetProjectsHandler(h *httpapi.ProjectsHandler) { s.projectsHandler = h }
+
+// SetOAuthHandler sets the OAuth handler (available in all modes).
+func (s *Server) SetOAuthHandler(h *httpapi.OAuthHandler) { s.oauthHandler = h }
 
 // SetAgentStore sets the agent store for context injection in tools_invoke.
 func (s *Server) SetAgentStore(as store.AgentStore) { s.agentStore = as }
