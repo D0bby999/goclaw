@@ -78,6 +78,18 @@ const ProjectsPage = lazy(() =>
 const ProjectSessionPage = lazy(() =>
   import("@/pages/projects/session-page").then((m) => ({ default: m.SessionPage })),
 );
+const NewsDigestPage = lazy(() =>
+  import("@/pages/news-digest/news-digest-page").then((m) => ({ default: m.NewsDigestPage })),
+);
+const SocialPage = lazy(() =>
+  import("@/pages/social/social-page").then((m) => ({ default: m.SocialPage })),
+);
+const PostComposerPage = lazy(() =>
+  import("@/pages/social/post-composer-page").then((m) => ({ default: m.PostComposerPage })),
+);
+const PostDetailPage = lazy(() =>
+  import("@/pages/social/post-detail-page").then((m) => ({ default: m.PostDetailPage })),
+);
 const SetupPage = lazy(() =>
   import("@/pages/setup/setup-page").then((m) => ({ default: m.SetupPage })),
 );
@@ -145,6 +157,11 @@ export function AppRoutes() {
           <Route path={ROUTES.BUILTIN_TOOLS} element={<BuiltinToolsPage />} />
           <Route path={ROUTES.MCP} element={<MCPPage />} />
           <Route path={ROUTES.TTS} element={<TtsPage />} />
+          <Route path={ROUTES.NEWS_DIGEST} element={<NewsDigestPage />} />
+          <Route path={ROUTES.SOCIAL} element={<SocialPage />} />
+          <Route path={ROUTES.SOCIAL_POSTS_NEW} element={<PostComposerPage />} />
+          <Route path={ROUTES.SOCIAL_POSTS_EDIT} element={<PostComposerPage />} />
+          <Route path={ROUTES.SOCIAL_POSTS_DETAIL} element={<PostDetailPage />} />
           <Route path={ROUTES.PROJECTS} element={<ProjectsPage key="projects-list" />} />
           <Route path={ROUTES.PROJECT_DETAIL} element={<ProjectsPage key="projects-detail" />} />
           <Route path={ROUTES.PROJECTS_SESSION} element={<ProjectSessionPage />} />

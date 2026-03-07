@@ -206,6 +206,12 @@ func (c *Channel) handleCallbackQuery(ctx context.Context, query *telego.Callbac
 		return
 	}
 
+	// Handle social publish callbacks
+	if strings.HasPrefix(query.Data, "sc:") {
+		c.handleSocialCallback(ctx, query, strings.TrimPrefix(query.Data, "sc:"))
+		return
+	}
+
 	// Handle task detail callbacks
 	if !strings.HasPrefix(query.Data, "td:") {
 		return

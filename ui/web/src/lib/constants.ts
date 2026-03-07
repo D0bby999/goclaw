@@ -31,6 +31,11 @@ export const ROUTES = {
   BUILTIN_TOOLS: "/builtin-tools",
   MCP: "/mcp",
   TTS: "/tts",
+  NEWS_DIGEST: "/news-digest",
+  SOCIAL: "/social",
+  SOCIAL_POSTS_NEW: "/social/posts/new",
+  SOCIAL_POSTS_DETAIL: "/social/posts/:id",
+  SOCIAL_POSTS_EDIT: "/social/posts/:id/edit",
   SETUP: "/setup",
 } as const;
 

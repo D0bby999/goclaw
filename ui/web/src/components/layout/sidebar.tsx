@@ -20,6 +20,8 @@ import {
   Volume2,
   Cpu,
   ArrowRightLeft,
+  Newspaper,
+  Share2,
 } from "lucide-react";
 import { SidebarGroup } from "./sidebar-group";
 import { SidebarItem } from "./sidebar-item";
@@ -76,6 +78,8 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
           <SidebarItem to={ROUTES.CHANNELS} icon={Radio} label="Channels" collapsed={collapsed} />
           <SidebarItem to={ROUTES.SKILLS} icon={Zap} label="Skills" collapsed={collapsed} />
           <SidebarItem to={ROUTES.CRON} icon={Clock} label="Cron" collapsed={collapsed} />
+          <SidebarItem to={ROUTES.NEWS_DIGEST} icon={Newspaper} label="News Digest" collapsed={collapsed} />
+          <SidebarItem to={ROUTES.SOCIAL} icon={Share2} label="Social" collapsed={collapsed} />
           <SidebarItem to={ROUTES.CUSTOM_TOOLS} icon={Wrench} label="Custom Tools" collapsed={collapsed} />
           <SidebarItem to={ROUTES.BUILTIN_TOOLS} icon={Package} label="Built-in Tools" collapsed={collapsed} />
           <SidebarItem to={ROUTES.MCP} icon={Plug} label="MCP Servers" collapsed={collapsed} />

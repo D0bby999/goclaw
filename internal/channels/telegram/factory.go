@@ -47,17 +47,34 @@ func FactoryWithStores(agentStore store.AgentStore, teamStore store.TeamStore) c
 // FactoryWithStoresAndProjects returns a ChannelFactory that includes agent, team, and project stores.
 func FactoryWithStoresAndProjects(agentStore store.AgentStore, teamStore store.TeamStore,
 	projectStore store.ProjectStore, projectManager any) channels.ChannelFactory {
+	return FactoryWithAllStores(agentStore, teamStore, projectStore, projectManager, nil, nil, nil)
+}
+
+// FactoryWithAllStores returns a ChannelFactory that includes all optional stores.
+func FactoryWithAllStores(agentStore store.AgentStore, teamStore store.TeamStore,
+	projectStore store.ProjectStore, projectManager any, newsStore store.NewsStore,
+	socialStore store.SocialStore, socialManager any) channels.ChannelFactory {
 	return func(name string, creds json.RawMessage, cfg json.RawMessage,
 		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
 		ch, err := buildChannel(name, creds, cfg, msgBus, pairingSvc, agentStore, teamStore)
 		if err != nil {
 			return nil, err
 		}
+		tg, ok := ch.(*Channel)
+		if !ok {
+			return ch, nil
+		}
 		// Inject project services if provided
 		if projectStore != nil && projectManager != nil {
-			if tg, ok := ch.(*Channel); ok {
-				tg.SetProjectServices(projectStore, projectManager.(*claudecode.ProcessManager))
-			}
+			tg.SetProjectServices(projectStore, projectManager.(*claudecode.ProcessManager))
+		}
+		// Inject news store if provided
+		if newsStore != nil {
+			tg.SetNewsStore(newsStore)
+		}
+		// Inject social services if provided
+		if socialStore != nil {
+			tg.SetSocialServices(socialStore, socialManager)
 		}
 		return ch, nil
 	}

@@ -60,6 +60,16 @@ export const queryKeys = {
   scraperCookies: {
     all: ["scraperCookies"] as const,
   },
+  newsDigest: {
+    sources: (agentId: string) => ["newsDigest", "sources", agentId] as const,
+    items: (agentId: string) => ["newsDigest", "items", agentId] as const,
+  },
+  social: {
+    accounts: ["social", "accounts"] as const,
+    posts: (params: Record<string, unknown>) => ["social", "posts", params] as const,
+    post: (id: string) => ["social", "post", id] as const,
+    platforms: ["social", "platforms"] as const,
+  },
   cc: {
     projects: ["cc", "projects"] as const,
     project: (id: string) => ["cc", "projects", id] as const,

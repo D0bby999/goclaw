@@ -147,6 +147,30 @@ export const Methods = {
   SCRAPER_COOKIES_DELETE: "scraper.cookies.delete",
   SCRAPER_COOKIES_LOGIN: "scraper.cookies.login",
 
+  // News digest
+  NEWS_SOURCES_LIST: "news.sources.list",
+  NEWS_SOURCES_CREATE: "news.sources.create",
+  NEWS_SOURCES_UPDATE: "news.sources.update",
+  NEWS_SOURCES_DELETE: "news.sources.delete",
+  NEWS_ITEMS_LIST: "news.items.list",
+  NEWS_ITEMS_STATS: "news.items.stats",
+
+  // Social management
+  SOCIAL_ACCOUNTS_LIST: "social.accounts.list",
+  SOCIAL_ACCOUNTS_CREATE: "social.accounts.create",
+  SOCIAL_ACCOUNTS_UPDATE: "social.accounts.update",
+  SOCIAL_ACCOUNTS_DELETE: "social.accounts.delete",
+  SOCIAL_POSTS_LIST: "social.posts.list",
+  SOCIAL_POSTS_CREATE: "social.posts.create",
+  SOCIAL_POSTS_GET: "social.posts.get",
+  SOCIAL_POSTS_UPDATE: "social.posts.update",
+  SOCIAL_POSTS_DELETE: "social.posts.delete",
+  SOCIAL_POSTS_PUBLISH: "social.posts.publish",
+  SOCIAL_TARGETS_ADD: "social.posts.targets.add",
+  SOCIAL_TARGETS_REMOVE: "social.posts.targets.remove",
+  SOCIAL_MEDIA_ADD: "social.posts.media.add",
+  SOCIAL_MEDIA_REMOVE: "social.posts.media.remove",
+
   // Phase 3+ - NICE TO HAVE
   LOGS_TAIL: "logs.tail",
   HEARTBEAT: "heartbeat",

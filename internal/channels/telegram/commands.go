@@ -80,6 +80,7 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 			"/stopall — Stop all running tasks\n" +
 			"/reset — Reset conversation history\n" +
 			"/status — Show bot status\n" +
+			"/news — Show latest news digest\n" +
 			"/tasks — List team tasks\n" +
 			"/task_detail <id> — View task detail\n" +
 			"/writers — List file writers for this group\n" +
@@ -87,6 +88,10 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 			"/removewriter — Remove a file writer (reply to their message)\n" +
 			"/project — Project sessions\n" +
 			"/project_exit — Exit project session mode\n" +
+			"/social — Show connected social accounts\n" +
+			"/post <text> — Create a draft post\n" +
+			"/posts — List recent posts\n" +
+			"/publish — Publish a draft post\n" +
 			"\nJust send a message to chat with the AI."
 		msg := tu.Message(chatIDObj, helpText)
 		setThread(msg)
@@ -191,6 +196,10 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 		c.bot.SendMessage(ctx, msg)
 		return true
 
+	case "/news":
+		c.handleNewsList(ctx, chatID, setThread)
+		return true
+
 	case "/tasks":
 		c.handleTasksList(ctx, chatID, isGroup, setThread)
 		return true
@@ -222,6 +231,22 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 		msg := tu.Message(chatIDObj, "Left project session mode.")
 		setThread(msg)
 		c.bot.SendMessage(ctx, msg)
+		return true
+
+	case "/social":
+		c.handleSocialList(ctx, chatID, setThread)
+		return true
+
+	case "/post":
+		c.handlePostCreate(ctx, chatID, text, setThread)
+		return true
+
+	case "/posts":
+		c.handlePostsList(ctx, chatID, setThread)
+		return true
+
+	case "/publish":
+		c.handlePublishMenu(ctx, chatID, setThread)
 		return true
 	}
 

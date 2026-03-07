@@ -147,10 +147,15 @@ func DefaultMenuCommands() []telego.BotCommand {
 		{Command: "stopall", Description: "Stop all running tasks"},
 		{Command: "reset", Description: "Reset conversation history"},
 		{Command: "status", Description: "Show bot status"},
+		{Command: "news", Description: "Show latest news digest"},
 		{Command: "tasks", Description: "List team tasks"},
 		{Command: "task_detail", Description: "View task detail by ID"},
 		{Command: "writers", Description: "List file writers for this group"},
 		{Command: "addwriter", Description: "Add a file writer (reply to their message)"},
 		{Command: "removewriter", Description: "Remove a file writer (reply to their message)"},
+		{Command: "social", Description: "Show connected social accounts"},
+		{Command: "post", Description: "Create a draft social post"},
+		{Command: "posts", Description: "List recent social posts"},
+		{Command: "publish", Description: "Publish a draft post"},
 	}
 }

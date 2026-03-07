@@ -722,9 +722,9 @@ func runGateway() {
 		instanceLoader = channels.NewInstanceLoader(pgStores.ChannelInstances, pgStores.Agents, channelMgr, msgBus, pgStores.Pairing)
 		// Use projects-enabled factory if project manager is available
 		if projectManagerForShutdown != nil && projectStoreForChannels != nil {
-			instanceLoader.RegisterFactory("telegram", telegram.FactoryWithStoresAndProjects(pgStores.Agents, pgStores.Teams, projectStoreForChannels, projectManagerForShutdown))
+			instanceLoader.RegisterFactory("telegram", telegram.FactoryWithAllStores(pgStores.Agents, pgStores.Teams, projectStoreForChannels, projectManagerForShutdown, pgStores.News, pgStores.Social, socialManager))
 		} else {
-			instanceLoader.RegisterFactory("telegram", telegram.FactoryWithStores(pgStores.Agents, pgStores.Teams))
+			instanceLoader.RegisterFactory("telegram", telegram.FactoryWithAllStores(pgStores.Agents, pgStores.Teams, nil, nil, pgStores.News, pgStores.Social, socialManager))
 		}
 		instanceLoader.RegisterFactory("discord", discord.Factory)
 		instanceLoader.RegisterFactory("feishu", feishu.Factory)
@@ -742,6 +742,9 @@ func runGateway() {
 		if err != nil {
 			slog.Error("failed to initialize telegram channel", "error", err)
 		} else {
+			if pgStores.News != nil {
+				tg.SetNewsStore(pgStores.News)
+			}
 			channelMgr.RegisterChannel("telegram", tg)
 			slog.Info("telegram channel enabled (config)")
 		}

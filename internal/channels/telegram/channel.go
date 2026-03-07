@@ -27,6 +27,9 @@ type Channel struct {
 	pairingService   store.PairingStore
 	agentStore       store.AgentStore  // for group file writer management (nil if not configured)
 	teamStore        store.TeamStore   // for /tasks, /task_detail commands (nil if not configured)
+	newsStore        store.NewsStore   // for /news command (nil if not configured)
+	socialStore      store.SocialStore // for /social, /post, /posts, /publish commands (nil if not configured)
+	socialManager    any               // *social.Manager for publishing (nil if not configured)
 	projectStore     store.ProjectStore        // for project session management (nil if disabled)
 	projectManager   *claudecode.ProcessManager // for project process control (nil if disabled)
 	projectPending   sync.Map         // chatID string → projectID string (waiting for initial prompt)
@@ -62,6 +65,19 @@ func (c *thinkingCancel) Cancel() {
 func (c *Channel) SetProjectServices(projectStore store.ProjectStore, projectManager *claudecode.ProcessManager) {
 	c.projectStore = projectStore
 	c.projectManager = projectManager
+}
+
+// SetNewsStore injects the news store after construction.
+// Must be non-nil for /news command to be available.
+func (c *Channel) SetNewsStore(newsStore store.NewsStore) {
+	c.newsStore = newsStore
+}
+
+// SetSocialServices injects social store and manager after construction.
+// Both must be non-nil for /social, /post, /posts, /publish commands to be available.
+func (c *Channel) SetSocialServices(socialStore store.SocialStore, socialManager any) {
+	c.socialStore = socialStore
+	c.socialManager = socialManager
 }
 
 // New creates a new Telegram channel from config.
