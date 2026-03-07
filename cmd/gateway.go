@@ -32,6 +32,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
 	"github.com/nextlevelbuilder/goclaw/internal/scraper"
+	"github.com/nextlevelbuilder/goclaw/internal/social"
 	"github.com/nextlevelbuilder/goclaw/internal/scheduler"
 	"github.com/nextlevelbuilder/goclaw/internal/skills"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -516,6 +517,19 @@ func runGateway() {
 	toolsReg.Register(tools.NewCronTool(pgStores.Cron))
 	slog.Info("cron tool registered")
 
+	// News tools (save, query, sources)
+	toolsReg.Register(tools.NewNewsSaveTool(pgStores.News))
+	toolsReg.Register(tools.NewNewsQueryTool(pgStores.News))
+	toolsReg.Register(tools.NewNewsSourcesTool(pgStores.News))
+	slog.Info("news tools registered")
+
+	// Social management
+	var socialManager *social.Manager
+	if pgStores.Social != nil {
+		socialManager = social.NewManager(pgStores.Social, storeCfg.EncryptionKey)
+		slog.Info("social manager initialized")
+	}
+
 	// Session tools (list, status, history, send)
 	toolsReg.Register(tools.NewSessionsListTool())
 	toolsReg.Register(tools.NewSessionStatusTool())
@@ -666,9 +680,21 @@ func runGateway() {
 		slog.Info("projects orchestration enabled")
 	}
 
+	// Social management — HTTP + WS
+	if pgStores.Social != nil && socialManager != nil {
+		socialH := httpapi.NewSocialHandler(pgStores.Social, socialManager, cfg.Gateway.Token)
+		server.SetSocialHandler(socialH)
+		methods.NewSocialMethods(pgStores.Social, socialManager).Register(server.Router())
+		slog.Info("social management enabled")
+	}
+
 	// Register all RPC methods
 	server.SetLogTee(logTee)
-	pairingMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee, browserMgr, scraperCookieStore)
+	pairingMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee, browserMgr, scraperCookieStore, pgStores.News)
+
+	// News HTTP API
+	newsHandler := httpapi.NewNewsHandler(pgStores.News, cfg.Gateway.Token)
+	server.SetNewsHandler(newsHandler)
 
 	// Wire pairing event broadcasts to all WS clients.
 	pairingMethods.SetBroadcaster(server.BroadcastEvent)

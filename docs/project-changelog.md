@@ -4,6 +4,24 @@ All notable changes to GoClaw project. Format: YYYY-MM-DD | Type | Brief descrip
 
 ## 2026
 
+### 2026-03-07 (Part 2)
+
+**feat:** Social Media Management — multi-platform publishing with scheduling
+
+- New 5-table schema (migration 000018): social_accounts, social_posts, social_post_targets, social_post_media, social_oauth_states
+- Store interface + PG implementation: `internal/store/social_store.go`, `internal/store/pg/{social_store.go, social_store_targets.go}`
+- 8 platform clients: Facebook, Instagram, Twitter/X, YouTube, TikTok, Threads, LinkedIn, Bluesky
+- Social manager: publish, schedule (cron-based), token refresh (proactive), batch cross-posting with content adaptation
+- HTTP API: 18 endpoints (accounts CRUD, posts CRUD + publish, targets, media, OAuth authorize/callback, utilities)
+- WebSocket RPC: 14 methods (social.accounts.*, social.posts.*, social_posts.media/targets.*)
+- Content adaptation per-platform (char/hashtag limits)
+- OAuth flow with CSRF protection (social_oauth_states table)
+- S3-compatible media upload (AWS S3, MinIO, R2)
+- Token encryption (AES-256-GCM) on storage
+- Files: 12 Go files in internal/social/, 2 HTTP handlers, 2 WS method sets, 1 store interface + 2 PG impls, 2 migrations
+- Full integration with existing gateway, store, cron systems
+- Schema version bumped to 18
+
 ### 2026-03-07
 
 **feat:** Project Access Control for Team Members

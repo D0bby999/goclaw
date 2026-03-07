@@ -45,6 +45,8 @@ type Server struct {
 	builtinToolsHandler     *httpapi.BuiltinToolsHandler     // builtin tool management API
 	projectsHandler         *httpapi.ProjectsHandler         // projects orchestration API
 	oauthHandler            *httpapi.OAuthHandler            // OAuth endpoints
+	newsHandler             *httpapi.NewsHandler             // news digest API
+	socialHandler           *httpapi.SocialHandler           // social management API
 	agentStore         store.AgentStore             // for context injection in tools_invoke
 
 	upgrader    websocket.Upgrader
@@ -205,6 +207,16 @@ func (s *Server) BuildMux() *http.ServeMux {
 		s.oauthHandler.RegisterRoutes(mux)
 	}
 
+	// News digest management API
+	if s.newsHandler != nil {
+		s.newsHandler.RegisterRoutes(mux)
+	}
+
+	// Social management API
+	if s.socialHandler != nil {
+		s.socialHandler.RegisterRoutes(mux)
+	}
+
 	// MCP bridge: expose GoClaw tools to Claude CLI via streamable-http.
 	// Only listens on localhost (CLI runs on the same machine).
 	// Protected by gateway token when configured.
@@ -345,6 +357,9 @@ func (s *Server) SetProjectsHandler(h *httpapi.ProjectsHandler) { s.projectsHand
 
 // SetOAuthHandler sets the OAuth handler (available in all modes).
 func (s *Server) SetOAuthHandler(h *httpapi.OAuthHandler) { s.oauthHandler = h }
+
+func (s *Server) SetNewsHandler(h *httpapi.NewsHandler)     { s.newsHandler = h }
+func (s *Server) SetSocialHandler(h *httpapi.SocialHandler) { s.socialHandler = h }
 
 // SetAgentStore sets the agent store for context injection in tools_invoke.
 func (s *Server) SetAgentStore(as store.AgentStore) { s.agentStore = as }

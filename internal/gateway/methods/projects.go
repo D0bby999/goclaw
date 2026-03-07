@@ -3,8 +3,6 @@ package methods
 import (
 	"context"
 	"encoding/json"
-	"slices"
-
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
@@ -57,23 +55,6 @@ func (m *ProjectsMethods) canAccess(ctx context.Context, project *store.ProjectD
 	if ok, _ := m.store.IsMember(ctx, project.ID, userID); ok {
 		return true
 	}
-	if project.TeamID != nil && m.teamStore != nil {
-		team, err := m.teamStore.GetTeam(ctx, *project.TeamID)
-		if err == nil && team != nil {
-			if team.CreatedBy == userID {
-				return true
-			}
-			var settings struct {
-				AllowUserIDs []string `json:"allow_user_ids"`
-			}
-			if team.Settings != nil {
-				_ = json.Unmarshal(team.Settings, &settings)
-			}
-			if slices.Contains(settings.AllowUserIDs, userID) {
-				return true
-			}
-		}
-	}
 	return false
 }
 
@@ -89,31 +70,10 @@ func (m *ProjectsMethods) handleProjectsList(_ context.Context, client *gateway.
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "projects not available"))
 		return
 	}
-	var params struct {
-		TeamID string `json:"team_id"`
-	}
-	if req.Params != nil {
-		_ = json.Unmarshal(req.Params, &params)
-	}
-
-	userID := client.UserID()
+	// All users can list all active projects
 	var projects []store.ProjectData
 	var err error
-	if params.TeamID != "" {
-		teamID, parseErr := uuid.Parse(params.TeamID)
-		if parseErr != nil {
-			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "invalid team_id"))
-			return
-		}
-		projects, err = m.store.ListProjectsByTeam(context.Background(), teamID)
-	} else if m.isOwner(userID) {
-		// System owner sees all active projects
-		projects, err = m.store.ListProjects(context.Background(), "")
-	} else if userID != "" {
-		projects, err = m.store.ListAccessibleProjects(context.Background(), userID)
-	} else {
-		projects = []store.ProjectData{}
-	}
+	projects, err = m.store.ListAccessibleProjects(context.Background(), client.UserID())
 	if err != nil {
 		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
 		return

@@ -21,4 +21,6 @@ type Stores struct {
 	Teams            TeamStore
 	BuiltinTools     BuiltinToolStore
 	Projects         ProjectStore
+	News             NewsStore
+	Social           SocialStore
 }

@@ -35,7 +35,6 @@ type ProjectData struct {
 	MaxSessions  int             `json:"max_sessions"`
 	MaxDuration  int             `json:"max_duration"`  // max session duration in seconds (0 = unlimited)
 	OwnerID      string          `json:"owner_id"`
-	TeamID       *uuid.UUID      `json:"team_id,omitempty"`
 	Status       string          `json:"status"`
 }
 
@@ -90,7 +89,6 @@ type ProjectStore interface {
 	UpdateProject(ctx context.Context, id uuid.UUID, updates map[string]any) error
 	DeleteProject(ctx context.Context, id uuid.UUID) error
 	ListProjects(ctx context.Context, ownerID string) ([]ProjectData, error)
-	ListProjectsByTeam(ctx context.Context, teamID uuid.UUID) ([]ProjectData, error)
 	ListAccessibleProjects(ctx context.Context, userID string) ([]ProjectData, error)
 
 	// Members

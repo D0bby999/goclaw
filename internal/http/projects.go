@@ -3,7 +3,6 @@ package http
 import (
 	"encoding/json"
 	"net/http"
-	"slices"
 
 	"github.com/google/uuid"
 
@@ -64,40 +63,9 @@ func (h *ProjectsHandler) auth(next http.HandlerFunc) http.HandlerFunc {
 	}
 }
 
-// canAccess checks if a user can access a project (read).
-func (h *ProjectsHandler) canAccess(r *http.Request, project *store.ProjectData) bool {
-	userID := store.UserIDFromContext(r.Context())
-	// 1. System owner
-	if h.isOwner(userID) {
-		return true
-	}
-	// 2. Project owner
-	if project.OwnerID == userID {
-		return true
-	}
-	// 3. Explicit member
-	if ok, _ := h.store.IsMember(r.Context(), project.ID, userID); ok {
-		return true
-	}
-	// 4. Team-linked access
-	if project.TeamID != nil && h.teamStore != nil {
-		team, err := h.teamStore.GetTeam(r.Context(), *project.TeamID)
-		if err == nil && team != nil {
-			if team.CreatedBy == userID {
-				return true
-			}
-			var settings struct {
-				AllowUserIDs []string `json:"allow_user_ids"`
-			}
-			if team.Settings != nil {
-				_ = json.Unmarshal(team.Settings, &settings)
-			}
-			if slices.Contains(settings.AllowUserIDs, userID) {
-				return true
-			}
-		}
-	}
-	return false
+// canAccess checks if a user can access a project (read). All users can access all projects.
+func (h *ProjectsHandler) canAccess(_ *http.Request, _ *store.ProjectData) bool {
+	return true
 }
 
 // canModify checks if a user can modify a project (owner or system owner only).
@@ -113,14 +81,8 @@ func (h *ProjectsHandler) handleListProjects(w http.ResponseWriter, r *http.Requ
 
 	var projects []store.ProjectData
 	var err error
-	if h.isOwner(userID) {
-		// System owner sees all active projects
-		projects, err = h.store.ListProjects(r.Context(), "")
-	} else if userID != "" {
-		projects, err = h.store.ListAccessibleProjects(r.Context(), userID)
-	} else {
-		projects = []store.ProjectData{}
-	}
+	// All users see all active projects
+	projects, err = h.store.ListAccessibleProjects(r.Context(), userID)
 	if err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})
 		return

@@ -141,10 +141,38 @@ const (
 
 // Scraper cookie management
 const (
-	MethodScraperCookiesList  = "scraper.cookies.list"
-	MethodScraperCookiesSet   = "scraper.cookies.set"
+	MethodScraperCookiesList   = "scraper.cookies.list"
+	MethodScraperCookiesSet    = "scraper.cookies.set"
 	MethodScraperCookiesDelete = "scraper.cookies.delete"
 	MethodScraperCookiesLogin  = "scraper.cookies.login"
+)
+
+// News digest management
+const (
+	MethodNewsSourcesList   = "news.sources.list"
+	MethodNewsSourcesCreate = "news.sources.create"
+	MethodNewsSourcesUpdate = "news.sources.update"
+	MethodNewsSourcesDelete = "news.sources.delete"
+	MethodNewsItemsList     = "news.items.list"
+	MethodNewsItemsStats    = "news.items.stats"
+)
+
+// Social management
+const (
+	MethodSocialAccountsList   = "social.accounts.list"
+	MethodSocialAccountsCreate = "social.accounts.create"
+	MethodSocialAccountsUpdate = "social.accounts.update"
+	MethodSocialAccountsDelete = "social.accounts.delete"
+	MethodSocialPostsList      = "social.posts.list"
+	MethodSocialPostsCreate    = "social.posts.create"
+	MethodSocialPostsGet       = "social.posts.get"
+	MethodSocialPostsUpdate    = "social.posts.update"
+	MethodSocialPostsDelete    = "social.posts.delete"
+	MethodSocialPostsPublish   = "social.posts.publish"
+	MethodSocialTargetsAdd     = "social.posts.targets.add"
+	MethodSocialTargetsRemove  = "social.posts.targets.remove"
+	MethodSocialMediaAdd       = "social.posts.media.add"
+	MethodSocialMediaRemove    = "social.posts.media.remove"
 )
 
 // Phase 3+ - NICE TO HAVE methods

@@ -23,7 +23,7 @@ func NewPGProjectStore(db *sql.DB, encryptionKey string) *PGProjectStore {
 // Projects
 // ============================================================
 
-const projectSelectCols = `id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, max_duration, owner_id, team_id, status, created_at, updated_at`
+const projectSelectCols = `id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, max_duration, owner_id, status, created_at, updated_at`
 
 func (s *PGProjectStore) CreateProject(ctx context.Context, p *store.ProjectData) error {
 	if p.ID == uuid.Nil {
@@ -43,11 +43,11 @@ func (s *PGProjectStore) CreateProject(ctx context.Context, p *store.ProjectData
 	claudeConfig := jsonOrNull(p.ClaudeConfig)
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO projects (id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, max_duration, owner_id, team_id, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
+		`INSERT INTO projects (id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, max_duration, owner_id, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
 		p.ID, p.Name, p.Slug, p.WorkDir, p.Description,
 		allowedTools, claudeConfig, p.MaxSessions, p.MaxDuration,
-		p.OwnerID, nilUUID(p.TeamID), p.Status, now, now,
+		p.OwnerID, p.Status, now, now,
 	)
 	return err
 }
@@ -68,7 +68,7 @@ func (s *PGProjectStore) GetProjectBySlug(ctx context.Context, slug string) (*st
 var allowedProjectCols = map[string]bool{
 	"name": true, "slug": true, "work_dir": true, "description": true,
 	"allowed_tools": true, "claude_config": true, "max_sessions, max_duration": true,
-	"status": true, "team_id": true, "updated_at": true,
+	"status": true, "updated_at": true,
 }
 
 // allowedSessionCols defines columns that can be updated via dynamic map updates.
@@ -96,7 +96,6 @@ func (s *PGProjectStore) ListProjects(ctx context.Context, ownerID string) ([]st
 	var rows *sql.Rows
 	var err error
 	if ownerID == "" {
-		// Empty ownerID → list all active projects (system owner / management UI)
 		rows, err = s.db.QueryContext(ctx,
 			`SELECT `+projectSelectCols+` FROM projects WHERE status = 'active' ORDER BY created_at DESC`)
 	} else {
@@ -110,9 +109,10 @@ func (s *PGProjectStore) ListProjects(ctx context.Context, ownerID string) ([]st
 	return s.scanProjectRows(rows)
 }
 
-func (s *PGProjectStore) ListProjectsByTeam(ctx context.Context, teamID uuid.UUID) ([]store.ProjectData, error) {
+func (s *PGProjectStore) ListAccessibleProjects(ctx context.Context, userID string) ([]store.ProjectData, error) {
+	// All users can access all active projects
 	rows, err := s.db.QueryContext(ctx,
-		`SELECT `+projectSelectCols+` FROM projects WHERE team_id = $1 AND status = 'active' ORDER BY created_at DESC`, teamID)
+		`SELECT `+projectSelectCols+` FROM projects WHERE status = 'active' ORDER BY created_at DESC`)
 	if err != nil {
 		return nil, err
 	}
@@ -123,12 +123,11 @@ func (s *PGProjectStore) ListProjectsByTeam(ctx context.Context, teamID uuid.UUI
 func (s *PGProjectStore) scanProjectRow(row *sql.Row) (*store.ProjectData, error) {
 	var p store.ProjectData
 	var desc, status sql.NullString
-	var teamID *uuid.UUID
 	var allowedTools, claudeConfig []byte
 	if err := row.Scan(
 		&p.ID, &p.Name, &p.Slug, &p.WorkDir, &desc,
 		&allowedTools, &claudeConfig, &p.MaxSessions, &p.MaxDuration,
-		&p.OwnerID, &teamID, &status, &p.CreatedAt, &p.UpdatedAt,
+		&p.OwnerID, &status, &p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return nil, err
 	}
@@ -140,7 +139,6 @@ func (s *PGProjectStore) scanProjectRow(row *sql.Row) (*store.ProjectData, error
 	if status.Valid {
 		p.Status = status.String
 	}
-	p.TeamID = teamID
 	return &p, nil
 }
 
@@ -149,12 +147,11 @@ func (s *PGProjectStore) scanProjectRows(rows *sql.Rows) ([]store.ProjectData, e
 	for rows.Next() {
 		var p store.ProjectData
 		var desc, status sql.NullString
-		var teamID *uuid.UUID
 		var allowedTools, claudeConfig []byte
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.Slug, &p.WorkDir, &desc,
 			&allowedTools, &claudeConfig, &p.MaxSessions, &p.MaxDuration,
-			&p.OwnerID, &teamID, &status, &p.CreatedAt, &p.UpdatedAt,
+			&p.OwnerID, &status, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, err
 		}
@@ -166,7 +163,6 @@ func (s *PGProjectStore) scanProjectRows(rows *sql.Rows) ([]store.ProjectData, e
 		if status.Valid {
 			p.Status = status.String
 		}
-		p.TeamID = teamID
 		projects = append(projects, p)
 	}
 	return projects, rows.Err()
@@ -225,22 +221,6 @@ func (s *PGProjectStore) IsMember(ctx context.Context, projectID uuid.UUID, user
 	return exists, err
 }
 
-func (s *PGProjectStore) ListAccessibleProjects(ctx context.Context, userID string) ([]store.ProjectData, error) {
-	rows, err := s.db.QueryContext(ctx,
-		`SELECT DISTINCT `+projectSelectCols+` FROM projects p
-		 WHERE p.status = 'active' AND (
-		     p.owner_id = $1
-		     OR p.id IN (SELECT project_id FROM project_members WHERE user_id = $1)
-		     OR p.team_id IN (SELECT id FROM agent_teams WHERE created_by = $1 AND status = 'active')
-		 )
-		 ORDER BY p.created_at DESC`, userID)
-	if err != nil {
-		return nil, err
-	}
-	defer rows.Close()
-	return s.scanProjectRows(rows)
-}
-
 // ============================================================
 // Sessions
 // ============================================================
@@ -290,7 +270,6 @@ func (s *PGProjectStore) UpdateSession(ctx context.Context, id uuid.UUID, update
 }
 
 func (s *PGProjectStore) DeleteSession(ctx context.Context, id uuid.UUID) error {
-	// Delete logs first (FK dependency), then the session.
 	tx, err := s.db.BeginTx(ctx, nil)
 	if err != nil {
 		return err
@@ -430,7 +409,6 @@ func (s *PGProjectStore) AppendLog(ctx context.Context, log *store.ProjectSessio
 		log.CreatedAt = nowUTC()
 	}
 
-	// Atomic seq assignment via INSERT ... SELECT to avoid TOCTOU race
 	err := s.db.QueryRowContext(ctx,
 		`INSERT INTO project_session_logs (id, session_id, event_type, content, seq, created_at)
 		 VALUES ($1, $2, $3, $4, (SELECT COALESCE(MAX(seq), -1) + 1 FROM project_session_logs WHERE session_id = $2), $5)
