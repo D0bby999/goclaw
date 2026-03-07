@@ -29,6 +29,7 @@ type ManagedProcess struct {
 	sessionID uuid.UUID
 	projectID uuid.UUID
 	done      chan struct{}
+	startedAt time.Time
 }
 
 // ProcessManager manages Claude Code CLI child processes.
@@ -104,6 +105,11 @@ func (m *ProcessManager) Start(ctx context.Context, opts StartOpts, startedBy st
 
 	if err := m.spawnAndWatch(ctx, sess.ID, opts.ProjectID, opts, workDir); err != nil {
 		return uuid.Nil, err
+	}
+
+	// Start watchdog if project has max_duration set
+	if proj.MaxDuration > 0 {
+		go m.watchTimeout(sess.ID, time.Duration(proj.MaxDuration)*time.Second)
 	}
 
 	slog.Info("cc: process started", "session_id", sess.ID, "project", proj.Name)
@@ -191,6 +197,7 @@ func (m *ProcessManager) spawnAndWatch(ctx context.Context, sessionID, projectID
 		cancel:    cancel,
 		sessionID: sessionID,
 		projectID: projectID,
+		startedAt: time.Now(),
 		done:      make(chan struct{}),
 	}
 
@@ -282,9 +289,11 @@ func (m *ProcessManager) accumulateResult(sessionID uuid.UUID, event StreamEvent
 	}
 
 	updates := map[string]any{
-		"input_tokens":  sess.InputTokens + int64(event.InputTokens),
-		"output_tokens": sess.OutputTokens + int64(event.OutputTokens),
-		"cost_usd":      sess.CostUSD + event.CostUSD,
+		"input_tokens":          sess.InputTokens + int64(event.InputTokens),
+		"output_tokens":         sess.OutputTokens + int64(event.OutputTokens),
+		"cache_read_tokens":     sess.CacheReadTokens + int64(event.CacheReadInputTokens),
+		"cache_creation_tokens": sess.CacheCreationTokens + int64(event.CacheCreationTokens),
+		"cost_usd":              sess.CostUSD + event.CostUSD,
 	}
 	if event.Subtype == "success" {
 		updates["status"] = store.ProjectSessionStatusCompleted
@@ -357,6 +366,29 @@ func (m *ProcessManager) StopAll() {
 
 	for _, id := range ids {
 		_ = m.Stop(context.Background(), id)
+	}
+}
+
+// watchTimeout stops a session if it exceeds max duration.
+func (m *ProcessManager) watchTimeout(sessionID uuid.UUID, maxDuration time.Duration) {
+	m.mu.RLock()
+	mp, ok := m.processes[sessionID]
+	m.mu.RUnlock()
+	if !ok {
+		return
+	}
+
+	select {
+	case <-mp.done:
+		// Process finished before timeout
+	case <-time.After(maxDuration):
+		if m.IsRunning(sessionID) {
+			slog.Warn("cc: session exceeded max_duration, stopping", "session_id", sessionID, "max_duration", maxDuration)
+			_ = m.Stop(context.Background(), sessionID)
+			_ = m.store.UpdateSession(context.Background(), sessionID, map[string]any{
+				"error": fmt.Sprintf("session timed out after %s", maxDuration),
+			})
+		}
 	}
 }
 

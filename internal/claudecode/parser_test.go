@@ -36,7 +36,7 @@ func TestParseStreamLine_Assistant(t *testing.T) {
 }
 
 func TestParseStreamLine_Result(t *testing.T) {
-	line := []byte(`{"type":"result","subtype":"success","session_id":"abc123","input_tokens":1000,"output_tokens":500,"cost_usd":0.05}`)
+	line := []byte(`{"type":"result","subtype":"success","session_id":"abc123","usage":{"input_tokens":1000,"output_tokens":500},"total_cost_usd":0.05}`)
 	event, err := parseStreamLine(line)
 	if err != nil {
 		t.Fatalf("unexpected error: %v", err)

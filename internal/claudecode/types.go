@@ -13,9 +13,11 @@ type StreamEvent struct {
 	SessionID string          `json:"session_id,omitempty"`
 	Raw       json.RawMessage `json:"raw"`
 	// Extracted from "result" events
-	InputTokens  int     `json:"input_tokens,omitempty"`
-	OutputTokens int     `json:"output_tokens,omitempty"`
-	CostUSD      float64 `json:"cost_usd,omitempty"`
+	InputTokens            int     `json:"input_tokens,omitempty"`
+	OutputTokens           int     `json:"output_tokens,omitempty"`
+	CacheReadInputTokens   int     `json:"cache_read_input_tokens,omitempty"`
+	CacheCreationTokens    int     `json:"cache_creation_input_tokens,omitempty"`
+	CostUSD                float64 `json:"cost_usd,omitempty"`
 }
 
 // StartOpts configures a new Claude Code process.

@@ -23,7 +23,7 @@ func NewPGProjectStore(db *sql.DB, encryptionKey string) *PGProjectStore {
 // Projects
 // ============================================================
 
-const projectSelectCols = `id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, owner_id, team_id, status, created_at, updated_at`
+const projectSelectCols = `id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, max_duration, owner_id, team_id, status, created_at, updated_at`
 
 func (s *PGProjectStore) CreateProject(ctx context.Context, p *store.ProjectData) error {
 	if p.ID == uuid.Nil {
@@ -43,10 +43,10 @@ func (s *PGProjectStore) CreateProject(ctx context.Context, p *store.ProjectData
 	claudeConfig := jsonOrNull(p.ClaudeConfig)
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO projects (id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, owner_id, team_id, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`,
+		`INSERT INTO projects (id, name, slug, work_dir, description, allowed_tools, claude_config, max_sessions, max_duration, owner_id, team_id, status, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14)`,
 		p.ID, p.Name, p.Slug, p.WorkDir, p.Description,
-		allowedTools, claudeConfig, p.MaxSessions,
+		allowedTools, claudeConfig, p.MaxSessions, p.MaxDuration,
 		p.OwnerID, nilUUID(p.TeamID), p.Status, now, now,
 	)
 	return err
@@ -67,14 +67,14 @@ func (s *PGProjectStore) GetProjectBySlug(ctx context.Context, slug string) (*st
 // allowedProjectCols defines columns that can be updated via dynamic map updates.
 var allowedProjectCols = map[string]bool{
 	"name": true, "slug": true, "work_dir": true, "description": true,
-	"allowed_tools": true, "claude_config": true, "max_sessions": true,
+	"allowed_tools": true, "claude_config": true, "max_sessions, max_duration": true,
 	"status": true, "team_id": true, "updated_at": true,
 }
 
 // allowedSessionCols defines columns that can be updated via dynamic map updates.
 var allowedSessionCols = map[string]bool{
 	"claude_session_id": true, "label": true, "status": true, "pid": true,
-	"input_tokens": true, "output_tokens": true, "cost_usd": true,
+	"input_tokens": true, "output_tokens": true, "cache_read_tokens": true, "cache_creation_tokens": true, "cost_usd": true,
 	"error": true, "stopped_at": true, "updated_at": true,
 }
 
@@ -127,7 +127,7 @@ func (s *PGProjectStore) scanProjectRow(row *sql.Row) (*store.ProjectData, error
 	var allowedTools, claudeConfig []byte
 	if err := row.Scan(
 		&p.ID, &p.Name, &p.Slug, &p.WorkDir, &desc,
-		&allowedTools, &claudeConfig, &p.MaxSessions,
+		&allowedTools, &claudeConfig, &p.MaxSessions, &p.MaxDuration,
 		&p.OwnerID, &teamID, &status, &p.CreatedAt, &p.UpdatedAt,
 	); err != nil {
 		return nil, err
@@ -153,7 +153,7 @@ func (s *PGProjectStore) scanProjectRows(rows *sql.Rows) ([]store.ProjectData, e
 		var allowedTools, claudeConfig []byte
 		if err := rows.Scan(
 			&p.ID, &p.Name, &p.Slug, &p.WorkDir, &desc,
-			&allowedTools, &claudeConfig, &p.MaxSessions,
+			&allowedTools, &claudeConfig, &p.MaxSessions, &p.MaxDuration,
 			&p.OwnerID, &teamID, &status, &p.CreatedAt, &p.UpdatedAt,
 		); err != nil {
 			return nil, err
@@ -245,7 +245,7 @@ func (s *PGProjectStore) ListAccessibleProjects(ctx context.Context, userID stri
 // Sessions
 // ============================================================
 
-const sessionSelectCols = `s.id, s.project_id, s.claude_session_id, s.label, s.status, s.pid, s.started_by, s.input_tokens, s.output_tokens, s.cost_usd, s.error, s.started_at, s.stopped_at, s.created_at, s.updated_at`
+const sessionSelectCols = `s.id, s.project_id, s.claude_session_id, s.label, s.status, s.pid, s.started_by, s.input_tokens, s.output_tokens, s.cache_read_tokens, s.cache_creation_tokens, s.cost_usd, s.error, s.started_at, s.stopped_at, s.created_at, s.updated_at`
 
 func (s *PGProjectStore) CreateSession(ctx context.Context, sess *store.ProjectSessionData) error {
 	if sess.ID == uuid.Nil {
@@ -260,11 +260,11 @@ func (s *PGProjectStore) CreateSession(ctx context.Context, sess *store.ProjectS
 	sess.StartedAt = now
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO project_sessions (id, project_id, claude_session_id, label, status, pid, started_by, input_tokens, output_tokens, cost_usd, error, started_at, stopped_at, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15)`,
+		`INSERT INTO project_sessions (id, project_id, claude_session_id, label, status, pid, started_by, input_tokens, output_tokens, cache_read_tokens, cache_creation_tokens, cost_usd, error, started_at, stopped_at, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17)`,
 		sess.ID, sess.ProjectID, nilStr(derefStr(sess.ClaudeSessionID)), sess.Label,
 		sess.Status, nilInt(derefInt(sess.PID)), sess.StartedBy,
-		sess.InputTokens, sess.OutputTokens, sess.CostUSD,
+		sess.InputTokens, sess.OutputTokens, sess.CacheReadTokens, sess.CacheCreationTokens, sess.CostUSD,
 		nilStr(derefStr(sess.Error)), sess.StartedAt, nilTime(sess.StoppedAt),
 		now, now,
 	)
@@ -355,7 +355,7 @@ func scanSessionRow(row *sql.Row) (*store.ProjectSessionData, error) {
 	var stoppedAt sql.NullTime
 	if err := row.Scan(
 		&sess.ID, &sess.ProjectID, &claudeSessionID, &label, &status,
-		&pid, &sess.StartedBy, &sess.InputTokens, &sess.OutputTokens, &sess.CostUSD,
+		&pid, &sess.StartedBy, &sess.InputTokens, &sess.OutputTokens, &sess.CacheReadTokens, &sess.CacheCreationTokens, &sess.CostUSD,
 		&errorStr, &sess.StartedAt, &stoppedAt, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.ProjectName, &sess.ProjectSlug,
 	); err != nil {
@@ -390,7 +390,7 @@ func scanSessionFromRows(rows *sql.Rows) (*store.ProjectSessionData, error) {
 	var stoppedAt sql.NullTime
 	if err := rows.Scan(
 		&sess.ID, &sess.ProjectID, &claudeSessionID, &label, &status,
-		&pid, &sess.StartedBy, &sess.InputTokens, &sess.OutputTokens, &sess.CostUSD,
+		&pid, &sess.StartedBy, &sess.InputTokens, &sess.OutputTokens, &sess.CacheReadTokens, &sess.CacheCreationTokens, &sess.CostUSD,
 		&errorStr, &sess.StartedAt, &stoppedAt, &sess.CreatedAt, &sess.UpdatedAt,
 		&sess.ProjectName, &sess.ProjectSlug,
 	); err != nil {

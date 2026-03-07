@@ -17,13 +17,17 @@ func parseStreamLine(line []byte) (StreamEvent, error) {
 
 	// Parse the envelope to extract type/subtype/session_id
 	var envelope struct {
-		Type      string  `json:"type"`
-		Subtype   string  `json:"subtype"`
-		SessionID string  `json:"session_id"`
-		// Result fields
-		InputTokens  int     `json:"input_tokens"`
-		OutputTokens int     `json:"output_tokens"`
-		CostUSD      float64 `json:"cost_usd"`
+		Type      string `json:"type"`
+		Subtype   string `json:"subtype"`
+		SessionID string `json:"session_id"`
+		// Result fields — tokens nested under "usage", cost at top level
+		Usage struct {
+			InputTokens              int `json:"input_tokens"`
+			OutputTokens             int `json:"output_tokens"`
+			CacheReadInputTokens     int `json:"cache_read_input_tokens"`
+			CacheCreationInputTokens int `json:"cache_creation_input_tokens"`
+		} `json:"usage"`
+		TotalCostUSD float64 `json:"total_cost_usd"`
 	}
 	if err := json.Unmarshal(line, &envelope); err != nil {
 		return StreamEvent{}, fmt.Errorf("parse stream line: %w", err)
@@ -35,9 +39,11 @@ func parseStreamLine(line []byte) (StreamEvent, error) {
 
 	// Extract token/cost info from result events
 	if envelope.Type == "result" {
-		event.InputTokens = envelope.InputTokens
-		event.OutputTokens = envelope.OutputTokens
-		event.CostUSD = envelope.CostUSD
+		event.InputTokens = envelope.Usage.InputTokens
+		event.OutputTokens = envelope.Usage.OutputTokens
+		event.CacheReadInputTokens = envelope.Usage.CacheReadInputTokens
+		event.CacheCreationTokens = envelope.Usage.CacheCreationInputTokens
+		event.CostUSD = envelope.TotalCostUSD
 	}
 
 	return event, nil

@@ -33,6 +33,7 @@ type ProjectData struct {
 	AllowedTools json.RawMessage `json:"allowed_tools,omitempty"`
 	ClaudeConfig json.RawMessage `json:"claude_config,omitempty"`
 	MaxSessions  int             `json:"max_sessions"`
+	MaxDuration  int             `json:"max_duration"`  // max session duration in seconds (0 = unlimited)
 	OwnerID      string          `json:"owner_id"`
 	TeamID       *uuid.UUID      `json:"team_id,omitempty"`
 	Status       string          `json:"status"`
@@ -47,9 +48,11 @@ type ProjectSessionData struct {
 	Status          string     `json:"status"`
 	PID             *int       `json:"pid,omitempty"`
 	StartedBy       string     `json:"started_by"`
-	InputTokens     int64      `json:"input_tokens"`
-	OutputTokens    int64      `json:"output_tokens"`
-	CostUSD         float64    `json:"cost_usd"`
+	InputTokens          int64   `json:"input_tokens"`
+	OutputTokens         int64   `json:"output_tokens"`
+	CacheReadTokens      int64   `json:"cache_read_tokens"`
+	CacheCreationTokens  int64   `json:"cache_creation_tokens"`
+	CostUSD              float64 `json:"cost_usd"`
 	Error           *string    `json:"error,omitempty"`
 	StartedAt       time.Time  `json:"started_at"`
 	StoppedAt       *time.Time `json:"stopped_at,omitempty"`
