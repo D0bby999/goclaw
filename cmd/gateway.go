@@ -653,6 +653,7 @@ func runGateway() {
 			})
 		}
 		projectManager := ccpkg.NewProcessManager(pgStores.Projects, projectEventCB)
+		projectManager.SetGatewayConfig(gatewayAddr, cfg.Gateway.Token)
 		projectsHandler := httpapi.NewProjectsHandler(pgStores.Projects, projectManager, cfg.Gateway.Token, msgBus, permPE.IsOwner, pgStores.Teams)
 		server.SetProjectsHandler(projectsHandler)
 

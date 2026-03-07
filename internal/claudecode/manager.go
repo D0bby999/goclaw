@@ -15,6 +15,7 @@ import (
 
 	"github.com/google/uuid"
 
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
@@ -32,10 +33,12 @@ type ManagedProcess struct {
 
 // ProcessManager manages Claude Code CLI child processes.
 type ProcessManager struct {
-	processes map[uuid.UUID]*ManagedProcess
-	mu        sync.RWMutex
-	store     store.ProjectStore
-	eventCB   EventCallback
+	processes    map[uuid.UUID]*ManagedProcess
+	mu           sync.RWMutex
+	store        store.ProjectStore
+	eventCB      EventCallback
+	gatewayAddr  string
+	gatewayToken string
 }
 
 func NewProcessManager(ccStore store.ProjectStore, eventCB EventCallback) *ProcessManager {
@@ -44,6 +47,14 @@ func NewProcessManager(ccStore store.ProjectStore, eventCB EventCallback) *Proce
 		store:     ccStore,
 		eventCB:   eventCB,
 	}
+}
+
+// SetGatewayConfig sets the gateway address and token for MCP bridge integration.
+// When set, spawned CLI processes get --mcp-config pointing to GoClaw's MCP bridge,
+// --settings with security hooks, and --disallowedTools to disable CLI builtins.
+func (m *ProcessManager) SetGatewayConfig(addr, token string) {
+	m.gatewayAddr = addr
+	m.gatewayToken = token
 }
 
 // Start spawns a new claude CLI process. Returns the CC session UUID.
@@ -108,7 +119,36 @@ func (m *ProcessManager) spawnAndWatch(ctx context.Context, sessionID, projectID
 		prompt = fmt.Sprintf("IMPORTANT: Focus only on files matching: %s. Do not modify files outside this scope.\n\n%s", opts.Scope, prompt)
 	}
 
+	// When MCP bridge is active, CLI builtins are disabled via --disallowedTools,
+	// so --allowedTools (which refers to CLI builtins) must not be emitted.
+	if m.gatewayAddr != "" {
+		opts.AllowedTools = nil
+	}
 	args := buildCLIArgs(opts)
+
+	// MCP bridge integration: add --mcp-config, --settings, --disallowedTools
+	var cleanupFuncs []func()
+	if m.gatewayAddr != "" {
+		mcpPath, mcpCleanup, mcpErr := providers.BuildCLIMCPConfig(nil, m.gatewayAddr, m.gatewayToken)
+		if mcpErr != nil {
+			slog.Warn("cc: failed to build MCP config", "error", mcpErr)
+		} else if mcpPath != "" {
+			args = append(args, "--mcp-config", mcpPath)
+			cleanupFuncs = append(cleanupFuncs, mcpCleanup)
+		}
+
+		hooksPath, hooksCleanup, hooksErr := providers.BuildCLIHooksConfig(workDir, true)
+		if hooksErr != nil {
+			slog.Warn("cc: failed to build hooks config", "error", hooksErr)
+		} else if hooksPath != "" {
+			args = append(args, "--settings", hooksPath)
+			cleanupFuncs = append(cleanupFuncs, hooksCleanup)
+		}
+
+		// Disable CLI's built-in tools so all tool calls route through GoClaw's MCP bridge
+		args = append(args, "--disallowedTools",
+			"Bash,Edit,Read,Write,Glob,Grep,WebFetch,WebSearch,TodoRead,TodoWrite,NotebookRead,NotebookEdit")
+	}
 
 	// Use Background so the child process outlives the HTTP request context
 	procCtx, cancel := context.WithCancel(context.Background())
@@ -120,14 +160,22 @@ func (m *ProcessManager) spawnAndWatch(ctx context.Context, sessionID, projectID
 	var stderrBuf strings.Builder
 	cmd.Stderr = &stderrBuf
 
+	cleanupTempFiles := func() {
+		for _, fn := range cleanupFuncs {
+			fn()
+		}
+	}
+
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		cancel()
+		cleanupTempFiles()
 		return fmt.Errorf("stdout pipe: %w", err)
 	}
 
 	if err := cmd.Start(); err != nil {
 		cancel()
+		cleanupTempFiles()
 		return fmt.Errorf("start claude: %w", err)
 	}
 
@@ -157,6 +205,7 @@ func (m *ProcessManager) spawnAndWatch(ctx context.Context, sessionID, projectID
 			m.mu.Lock()
 			delete(m.processes, sessionID)
 			m.mu.Unlock()
+			cleanupTempFiles()
 		}()
 
 		scanner := bufio.NewScanner(stdout)
