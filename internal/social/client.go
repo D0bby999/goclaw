@@ -119,6 +119,11 @@ type OAuthConfig struct {
 	RedirectURI  string `json:"redirect_uri"`
 }
 
+// CookieSource retrieves stored cookies for a platform (used for browser automation).
+type CookieSource interface {
+	GetDefault(ctx context.Context, platform string) (string, error)
+}
+
 // NewClient creates a platform client with the given token and metadata.
 func NewClient(platform, accessToken string, metadata json.RawMessage) (PlatformClient, error) {
 	switch platform {

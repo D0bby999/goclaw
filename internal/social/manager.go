@@ -9,13 +9,16 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/store"
+	"github.com/nextlevelbuilder/goclaw/pkg/browser"
 )
 
 // Manager orchestrates publishing, scheduling, and token refresh.
 type Manager struct {
-	store  store.SocialStore
-	encKey string
-	logger *slog.Logger
+	store      store.SocialStore
+	encKey     string
+	logger     *slog.Logger
+	browserMgr *browser.Manager
+	cookieSrc  CookieSource
 }
 
 // NewManager creates a new social manager.
@@ -25,6 +28,16 @@ func NewManager(store store.SocialStore, encKey string) *Manager {
 		encKey: encKey,
 		logger: slog.Default().With("component", "social"),
 	}
+}
+
+// SetBrowser wires an optional browser manager for platforms that use automation.
+func (m *Manager) SetBrowser(mgr *browser.Manager) {
+	m.browserMgr = mgr
+}
+
+// SetCookieStore wires an optional cookie source for browser-based authentication.
+func (m *Manager) SetCookieStore(cs CookieSource) {
+	m.cookieSrc = cs
 }
 
 // Store returns the underlying social store (for direct queries by handlers).
@@ -110,15 +123,29 @@ func (m *Manager) publishSingleTarget(ctx context.Context, post *store.SocialPos
 		return
 	}
 
-	// Create platform client
-	client, err := NewClient(account.Platform, account.AccessToken, account.Metadata)
-	if err != nil {
-		errMsg := err.Error()
-		_ = m.store.UpdateTarget(ctx, target.ID, map[string]any{
-			"status": store.SocialTargetStatusFailed,
-			"error":  errMsg,
-		})
-		return
+	// Create platform client — use browser automation for TikTok when no API token.
+	var client PlatformClient
+	if account.Platform == "tiktok" && account.AccessToken == "" {
+		if m.browserMgr == nil {
+			errMsg := "no API token and no browser manager available for tiktok"
+			_ = m.store.UpdateTarget(ctx, target.ID, map[string]any{
+				"status": store.SocialTargetStatusFailed,
+				"error":  errMsg,
+			})
+			return
+		}
+		client = newTikTokBrowserClient(m.browserMgr, m.cookieSrc, account.Metadata)
+	} else {
+		var clientErr error
+		client, clientErr = NewClient(account.Platform, account.AccessToken, account.Metadata)
+		if clientErr != nil {
+			errMsg := clientErr.Error()
+			_ = m.store.UpdateTarget(ctx, target.ID, map[string]any{
+				"status": store.SocialTargetStatusFailed,
+				"error":  errMsg,
+			})
+			return
+		}
 	}
 
 	// Adapt content for platform

@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"time"
 
+	"github.com/go-rod/rod"
 	"github.com/go-rod/rod/lib/proto"
 )
 
@@ -82,4 +83,12 @@ func (m *Manager) Close() error {
 // Refs returns the RefStore for external use (e.g. actions).
 func (m *Manager) Refs() *RefStore {
 	return m.refs
+}
+
+// GetPage returns the underlying *rod.Page for a given targetID.
+// This is an escape hatch for CDP operations not exposed by Manager (e.g. cookie injection).
+func (m *Manager) GetPage(targetID string) (*rod.Page, error) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	return m.getPage(targetID)
 }

@@ -527,6 +527,13 @@ func runGateway() {
 	var socialManager *social.Manager
 	if pgStores.Social != nil {
 		socialManager = social.NewManager(pgStores.Social, storeCfg.EncryptionKey)
+		if browserMgr != nil {
+			socialManager.SetBrowser(browserMgr)
+			slog.Info("social manager: browser automation enabled")
+		}
+		if scraperCookieStore != nil {
+			socialManager.SetCookieStore(scraperCookieStore)
+		}
 		slog.Info("social manager initialized")
 	}
 
