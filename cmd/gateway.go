@@ -702,6 +702,11 @@ func runGateway() {
 		// Register WS RPC methods
 		methods.NewProjectsMethods(pgStores.Projects, projectManager, msgBus, pgStores.Teams, permPE.IsOwner).Register(server.Router())
 
+		// Agent tools for project session management
+		toolsReg.Register(tools.NewProjectSessionStartTool(pgStores.Projects, projectManager))
+		toolsReg.Register(tools.NewProjectSessionStatusTool(pgStores.Projects, projectManager))
+		toolsReg.Register(tools.NewProjectSessionsListTool(pgStores.Projects))
+
 		// Store for channel injection and graceful shutdown
 		projectManagerForShutdown = projectManager
 		projectStoreForChannels = pgStores.Projects
