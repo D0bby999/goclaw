@@ -17,7 +17,8 @@ import (
 const maxNewsItems = 10
 
 // handleNewsList handles the /news command — shows latest news digest.
-func (c *Channel) handleNewsList(ctx context.Context, chatID int64, setThread func(*telego.SendMessageParams)) {
+// Supports category filter: /news ai, /news startup, /news idea
+func (c *Channel) handleNewsList(ctx context.Context, chatID int64, text string, setThread func(*telego.SendMessageParams)) {
 	chatIDObj := tu.ID(chatID)
 
 	send := func(text string) {
@@ -38,11 +39,24 @@ func (c *Channel) handleNewsList(ctx context.Context, chatID int64, setThread fu
 		return
 	}
 
+	// Parse optional category filter: "/news ai" → categories=["ai"]
+	var categories []string
+	if parts := strings.SplitN(text, " ", 2); len(parts) == 2 {
+		cat := strings.TrimSpace(parts[1])
+		if cat != "" {
+			categories = strings.Split(cat, ",")
+			for i := range categories {
+				categories[i] = strings.TrimSpace(categories[i])
+			}
+		}
+	}
+
 	since := time.Now().Add(-24 * time.Hour)
 	items, err := c.newsStore.ListItems(ctx, store.NewsItemFilter{
-		AgentID: agentID,
-		Since:   &since,
-		Limit:   maxNewsItems,
+		AgentID:    agentID,
+		Categories: categories,
+		Since:      &since,
+		Limit:      maxNewsItems,
 	})
 	if err != nil {
 		slog.Warn("news command: ListItems failed", "error", err)
@@ -51,12 +65,20 @@ func (c *Channel) handleNewsList(ctx context.Context, chatID int64, setThread fu
 	}
 
 	if len(items) == 0 {
-		send("No news items in the last 24 hours.")
+		if len(categories) > 0 {
+			send(fmt.Sprintf("No news items for [%s] in the last 24 hours.", strings.Join(categories, ", ")))
+		} else {
+			send("No news items in the last 24 hours.")
+		}
 		return
 	}
 
 	var sb strings.Builder
-	sb.WriteString(fmt.Sprintf("<b>News Digest</b> (%d items, last 24h)\n", len(items)))
+	if len(categories) > 0 {
+		sb.WriteString(fmt.Sprintf("<b>News Digest</b> [%s] (%d items, last 24h)\n", html.EscapeString(strings.Join(categories, ", ")), len(items)))
+	} else {
+		sb.WriteString(fmt.Sprintf("<b>News Digest</b> (%d items, last 24h)\n", len(items)))
+	}
 
 	for i, item := range items {
 		sb.WriteString(fmt.Sprintf("\n%d. <b>%s</b>", i+1, html.EscapeString(item.Title)))

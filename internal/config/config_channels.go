@@ -215,6 +215,35 @@ type QuotaConfig struct {
 	Groups    map[string]QuotaWindow `json:"groups,omitempty"`    // key = userID (e.g. "group:telegram:-100123")
 }
 
+// SocialConfig configures social media OAuth credentials.
+// Secrets loaded from env vars only (never persisted in config.json).
+type SocialConfig struct {
+	FacebookAppID      string `json:"-"` // from env FACEBOOK_APP_ID
+	FacebookAppSecret  string `json:"-"` // from env FACEBOOK_APP_SECRET
+	FacebookAppVersion string `json:"-"` // from env FACEBOOK_APP_VERSION (default "24")
+
+	TwitterClientID     string `json:"-"` // from env TWITTER_CLIENT_ID
+	TwitterClientSecret string `json:"-"` // from env TWITTER_CLIENT_SECRET
+
+	LinkedInClientID     string `json:"-"` // from env LINKEDIN_CLIENT_ID
+	LinkedInClientSecret string `json:"-"` // from env LINKEDIN_CLIENT_SECRET
+
+	GoogleClientID     string `json:"-"` // from env GOOGLE_CLIENT_ID
+	GoogleClientSecret string `json:"-"` // from env GOOGLE_CLIENT_SECRET
+
+	TikTokClientKey    string `json:"-"` // from env TIKTOK_CLIENT_KEY
+	TikTokClientSecret string `json:"-"` // from env TIKTOK_CLIENT_SECRET
+}
+
+// FacebookGraphVersion returns the Graph API version string, e.g. "v24.0".
+func (c SocialConfig) FacebookGraphVersion() string {
+	v := c.FacebookAppVersion
+	if v == "" {
+		v = "25"
+	}
+	return "v" + v + ".0"
+}
+
 // GatewayConfig controls the gateway server.
 type GatewayConfig struct {
 	Host              string       `json:"host"`

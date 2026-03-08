@@ -120,6 +120,19 @@ func (c *Config) applyEnvOverrides() {
 	envStr("GOCLAW_LARK_VERIFICATION_TOKEN", &c.Channels.Feishu.VerificationToken)
 	envStr("GOCLAW_WHATSAPP_BRIDGE_URL", &c.Channels.WhatsApp.BridgeURL)
 
+	// Social OAuth
+	envStr("FACEBOOK_APP_ID", &c.Social.FacebookAppID)
+	envStr("FACEBOOK_APP_SECRET", &c.Social.FacebookAppSecret)
+	envStr("FACEBOOK_APP_VERSION", &c.Social.FacebookAppVersion)
+	envStr("TWITTER_CLIENT_ID", &c.Social.TwitterClientID)
+	envStr("TWITTER_CLIENT_SECRET", &c.Social.TwitterClientSecret)
+	envStr("LINKEDIN_CLIENT_ID", &c.Social.LinkedInClientID)
+	envStr("LINKEDIN_CLIENT_SECRET", &c.Social.LinkedInClientSecret)
+	envStr("GOOGLE_CLIENT_ID", &c.Social.GoogleClientID)
+	envStr("GOOGLE_CLIENT_SECRET", &c.Social.GoogleClientSecret)
+	envStr("TIKTOK_CLIENT_KEY", &c.Social.TikTokClientKey)
+	envStr("TIKTOK_CLIENT_SECRET", &c.Social.TikTokClientSecret)
+
 	// TTS secrets
 	envStr("GOCLAW_TTS_OPENAI_API_KEY", &c.Tts.OpenAI.APIKey)
 	envStr("GOCLAW_TTS_ELEVENLABS_API_KEY", &c.Tts.ElevenLabs.APIKey)

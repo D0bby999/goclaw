@@ -76,6 +76,7 @@ export function SocialPage() {
             onCreate={createAccount}
             onUpdate={updateAccount}
             onDelete={deleteAccount}
+            onRefresh={refreshAccounts}
           />
         )}
       </div>

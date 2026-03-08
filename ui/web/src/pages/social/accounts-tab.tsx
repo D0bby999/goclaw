@@ -21,9 +21,10 @@ interface AccountsTabProps {
   }) => Promise<void>;
   onUpdate: (id: string, updates: Record<string, unknown>) => Promise<void>;
   onDelete: (id: string) => Promise<void>;
+  onRefresh?: () => void;
 }
 
-export function AccountsTab({ accounts, loading, onCreate, onUpdate, onDelete }: AccountsTabProps) {
+export function AccountsTab({ accounts, loading, onCreate, onUpdate, onDelete, onRefresh }: AccountsTabProps) {
   const [showForm, setShowForm] = useState(false);
   const [editAccount, setEditAccount] = useState<SocialAccount | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<SocialAccount | null>(null);
@@ -56,6 +57,7 @@ export function AccountsTab({ accounts, loading, onCreate, onUpdate, onDelete }:
           onSubmit={onCreate}
           onUpdate={onUpdate}
           editAccount={editAccount}
+          onOAuthComplete={onRefresh}
         />
       </>
     );

@@ -112,6 +112,10 @@ func AdaptContent(content, platform string) (adapted string, warnings []string) 
 	return adapted, warnings
 }
 
+// GraphVersion is the Facebook Graph API version prefix, e.g. "v24.0".
+// Set at startup from config.Social.FacebookGraphVersion().
+var GraphVersion = "v25.0"
+
 // OAuthConfig holds platform OAuth credentials from config.
 type OAuthConfig struct {
 	ClientID     string `json:"client_id"`

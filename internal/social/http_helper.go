@@ -68,6 +68,11 @@ func classifyHTTPError(status int, body []byte, platform string) *PlatformError 
 	return &PlatformError{Platform: platform, Category: cat, Code: status, Message: msg}
 }
 
+// DoGraphJSON is an exported alias of doJSON for use by the OAuth handler.
+func DoGraphJSON(ctx context.Context, method, url string, body any, headers map[string]string, out any) error {
+	return doJSON(ctx, method, url, body, headers, out)
+}
+
 // bearerHeader returns an Authorization: Bearer header map.
 func bearerHeader(token string) map[string]string {
 	return map[string]string{"Authorization": "Bearer " + token}

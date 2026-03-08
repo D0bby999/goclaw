@@ -11,6 +11,9 @@ import (
 	"github.com/google/uuid"
 )
 
+// nowUTC returns the current time in UTC.
+func nowUTC() time.Time { return time.Now().UTC() }
+
 // --- Nullable helpers ---
 
 func nilStr(s string) *string {

@@ -4,6 +4,26 @@ All notable changes to GoClaw project. Format: YYYY-MM-DD | Type | Brief descrip
 
 ## 2026
 
+### 2026-03-08
+
+**feat:** Social Media Management — OAuth 2.0 integration for 7 platforms
+
+- OAuth 2.0 support: Facebook, Instagram, Threads (Meta), Twitter (PKCE), LinkedIn, YouTube/Google, TikTok
+- Bluesky remains token-only (no OAuth)
+- New environment variables:
+  - Meta platforms: `FACEBOOK_APP_ID`, `FACEBOOK_APP_SECRET`, `FACEBOOK_APP_VERSION` (default "24")
+  - Twitter: `TWITTER_CLIENT_ID`, `TWITTER_CLIENT_SECRET`
+  - LinkedIn: `LINKEDIN_CLIENT_ID`, `LINKEDIN_CLIENT_SECRET`
+  - YouTube/Google: `GOOGLE_CLIENT_ID`, `GOOGLE_CLIENT_SECRET`
+  - TikTok: `TIKTOK_CLIENT_KEY`, `TIKTOK_CLIENT_SECRET`
+- HTTP endpoints:
+  - `GET /v1/social/oauth/start?platform=X` — Initiate OAuth flow (returns auth URL)
+  - `GET /v1/social/oauth/callback?state=X&code=Y` — OAuth callback handler (redirects from provider)
+  - `GET /v1/social/oauth/status` — List configured platforms with authorization status
+- Per-platform OAuth configuration: `internal/config/config_channels.go` (SocialConfig struct)
+- OAuth flows: Meta (Facebook OAuth Dialog), Twitter (v2 API with PKCE), LinkedIn (authorization endpoint), Google (accounts consent), TikTok (token endpoint)
+- Files: `internal/http/social_oauth.go`, `internal/http/social_oauth_twitter.go`, `internal/http/social_oauth_linkedin.go`, `internal/http/social_oauth_youtube.go`
+
 ### 2026-03-07 (Part 2)
 
 **feat:** Social Media Management — multi-platform publishing with scheduling

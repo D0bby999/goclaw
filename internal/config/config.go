@@ -51,6 +51,7 @@ type Config struct {
 	Cron      CronConfig      `json:"cron,omitempty"`
 	Telemetry TelemetryConfig `json:"telemetry,omitempty"`
 	Tailscale TailscaleConfig `json:"tailscale,omitempty"`
+	Social    SocialConfig    `json:"social,omitempty"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	mu            sync.RWMutex
 }
@@ -375,6 +376,7 @@ func (c *Config) ReplaceFrom(src *Config) {
 	c.Cron = src.Cron
 	c.Telemetry = src.Telemetry
 	c.Tailscale = src.Tailscale
+	c.Social = src.Social
 	c.Bindings = src.Bindings
 }
 

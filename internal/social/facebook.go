@@ -45,7 +45,7 @@ func (c *facebookClient) Publish(ctx context.Context, req PublishRequest) (*Publ
 }
 
 func (c *facebookClient) publishText(ctx context.Context, target, tok string, req PublishRequest) (*PublishResult, error) {
-	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/feed", target)
+	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/feed", GraphVersion, target)
 	params := url.Values{"message": {req.Content}, "access_token": {tok}}
 
 	var resp struct {
@@ -61,7 +61,7 @@ func (c *facebookClient) publishText(ctx context.Context, target, tok string, re
 }
 
 func (c *facebookClient) publishPhoto(ctx context.Context, target, tok string, req PublishRequest) (*PublishResult, error) {
-	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/photos", target)
+	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/photos", GraphVersion, target)
 	params := url.Values{
 		"url":          {req.Media[0].URL},
 		"caption":      {req.Content},
@@ -95,7 +95,7 @@ func (c *facebookClient) GetProfile(ctx context.Context) (*ProfileResult, error)
 	if tok == "" {
 		tok = c.token
 	}
-	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/me?fields=id,name,picture&access_token=%s", tok)
+	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/me?fields=id,name,picture&access_token=%s", GraphVersion, tok)
 	var resp struct {
 		ID      string `json:"id"`
 		Name    string `json:"name"`

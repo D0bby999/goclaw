@@ -7,6 +7,7 @@ import (
 	"os"
 	"os/signal"
 	"path/filepath"
+	"strings"
 	"syscall"
 
 	"github.com/google/uuid"
@@ -531,6 +532,7 @@ func runGateway() {
 	slog.Info("news tools registered")
 
 	// Social management
+	social.GraphVersion = cfg.Social.FacebookGraphVersion()
 	var socialManager *social.Manager
 	if pgStores.Social != nil {
 		socialManager = social.NewManager(pgStores.Social, storeCfg.EncryptionKey)
@@ -711,6 +713,61 @@ func runGateway() {
 		socialH := httpapi.NewSocialHandler(pgStores.Social, socialManager, cfg.Gateway.Token)
 		server.SetSocialHandler(socialH)
 		methods.NewSocialMethods(pgStores.Social, socialManager).Register(server.Router())
+
+		// Social OAuth (all platforms)
+		oauthCfgs := httpapi.PlatformOAuthConfigs{}
+		if cfg.Social.FacebookAppID != "" && cfg.Social.FacebookAppSecret != "" {
+			oauthCfgs.Meta = &social.OAuthConfig{
+				ClientID:     cfg.Social.FacebookAppID,
+				ClientSecret: cfg.Social.FacebookAppSecret,
+			}
+		}
+		if cfg.Social.TwitterClientID != "" && cfg.Social.TwitterClientSecret != "" {
+			oauthCfgs.Twitter = &social.OAuthConfig{
+				ClientID:     cfg.Social.TwitterClientID,
+				ClientSecret: cfg.Social.TwitterClientSecret,
+			}
+		}
+		if cfg.Social.LinkedInClientID != "" && cfg.Social.LinkedInClientSecret != "" {
+			oauthCfgs.LinkedIn = &social.OAuthConfig{
+				ClientID:     cfg.Social.LinkedInClientID,
+				ClientSecret: cfg.Social.LinkedInClientSecret,
+			}
+		}
+		if cfg.Social.GoogleClientID != "" && cfg.Social.GoogleClientSecret != "" {
+			oauthCfgs.Google = &social.OAuthConfig{
+				ClientID:     cfg.Social.GoogleClientID,
+				ClientSecret: cfg.Social.GoogleClientSecret,
+			}
+		}
+		if cfg.Social.TikTokClientKey != "" && cfg.Social.TikTokClientSecret != "" {
+			oauthCfgs.TikTok = &social.OAuthConfig{
+				ClientID:     cfg.Social.TikTokClientKey,
+				ClientSecret: cfg.Social.TikTokClientSecret,
+			}
+		}
+		socialOAuthH := httpapi.NewSocialOAuthHandler(pgStores.Social, socialManager, cfg.Gateway.Token, oauthCfgs)
+		server.SetSocialOAuthHandler(socialOAuthH)
+		var enabledPlatforms []string
+		if oauthCfgs.Meta != nil {
+			enabledPlatforms = append(enabledPlatforms, "facebook", "instagram", "threads")
+		}
+		if oauthCfgs.Twitter != nil {
+			enabledPlatforms = append(enabledPlatforms, "twitter")
+		}
+		if oauthCfgs.LinkedIn != nil {
+			enabledPlatforms = append(enabledPlatforms, "linkedin")
+		}
+		if oauthCfgs.Google != nil {
+			enabledPlatforms = append(enabledPlatforms, "youtube")
+		}
+		if oauthCfgs.TikTok != nil {
+			enabledPlatforms = append(enabledPlatforms, "tiktok")
+		}
+		if len(enabledPlatforms) > 0 {
+			slog.Info("social OAuth enabled", "platforms", strings.Join(enabledPlatforms, ","))
+		}
+
 		slog.Info("social management enabled")
 	}
 

@@ -80,7 +80,7 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 			"/stopall — Stop all running tasks\n" +
 			"/reset — Reset conversation history\n" +
 			"/status — Show bot status\n" +
-			"/news — Show latest news digest\n" +
+			"/news [category] — Show latest news digest (e.g. /news ai)\n" +
 			"/tasks — List team tasks\n" +
 			"/task_detail <id> — View task detail\n" +
 			"/writers — List file writers for this group\n" +
@@ -197,7 +197,7 @@ func (c *Channel) handleBotCommand(ctx context.Context, message *telego.Message,
 		return true
 
 	case "/news":
-		c.handleNewsList(ctx, chatID, setThread)
+		c.handleNewsList(ctx, chatID, text, setThread)
 		return true
 
 	case "/tasks":

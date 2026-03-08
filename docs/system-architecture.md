@@ -177,6 +177,85 @@ policyEngine.AddToGroup("web", "scraper")
 - Composition over inheritance: platform actors composed from shared layers
 - Single responsibility: each file handles one concern (parsing, extraction, etc.)
 
+## Social Media Module
+
+### Overview
+
+The social module (`internal/social/`) provides multi-platform social media publishing, scheduling, and account management with OAuth 2.0 authentication.
+
+### Supported Platforms
+
+| Platform | Auth Type | Implementation | Status |
+|----------|-----------|-----------------|--------|
+| **Facebook** | OAuth 2.0 | Meta Graph API (versioned) | Implemented |
+| **Instagram** | OAuth 2.0 | Meta Graph API (Business Account) | Implemented |
+| **Threads** | OAuth 2.0 | Threads API (threads.net) | Implemented |
+| **Twitter/X** | OAuth 2.0 (PKCE) | Twitter API v2 | Implemented |
+| **LinkedIn** | OAuth 2.0 | LinkedIn OAuth endpoint | Implemented |
+| **YouTube** | OAuth 2.0 | Google OAuth (YouTube Data API v3) | Implemented |
+| **TikTok** | OAuth 2.0 | TikTok OAuth token endpoint | Implemented |
+| **Bluesky** | Token-based | No OAuth (app password only) | Implemented |
+
+### OAuth Configuration
+
+Environment variables for each platform:
+
+```env
+# Meta (Facebook/Instagram/Threads)
+FACEBOOK_APP_ID=your_app_id
+FACEBOOK_APP_SECRET=your_app_secret
+FACEBOOK_APP_VERSION=24          # Default Graph API version
+
+# Twitter
+TWITTER_CLIENT_ID=your_client_id
+TWITTER_CLIENT_SECRET=your_client_secret
+
+# LinkedIn
+LINKEDIN_CLIENT_ID=your_client_id
+LINKEDIN_CLIENT_SECRET=your_client_secret
+
+# Google (YouTube)
+GOOGLE_CLIENT_ID=your_client_id
+GOOGLE_CLIENT_SECRET=your_client_secret
+
+# TikTok
+TIKTOK_CLIENT_KEY=your_client_key
+TIKTOK_CLIENT_SECRET=your_client_secret
+```
+
+### HTTP OAuth Endpoints
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/v1/social/oauth/start` | GET | Initiate OAuth flow (`?platform=X`) → returns provider auth URL |
+| `/v1/social/oauth/callback` | GET | OAuth provider callback (`?state=X&code=Y`) → redirects from provider |
+| `/v1/social/oauth/status` | GET | List configured platforms with authorization status |
+
+### Architecture
+
+**Handler:** `internal/http/social_oauth.go`
+- `SocialOAuthHandler`: routes OAuth flows per platform
+- `PlatformOAuthConfigs`: holds all per-platform OAuth config structs
+- Platform-specific handlers: `social_oauth_twitter.go`, `social_oauth_linkedin.go`, `social_oauth_youtube.go`
+
+**Configuration:** `internal/config/config_channels.go` (SocialConfig struct)
+- Loads env vars at startup
+- Default Graph API version "24" for Meta platforms
+
+**Database:**
+- `social_oauth_states` table: CSRF protection, state→user_id mapping, TTL enforcement
+- `social_accounts` table: stored credentials (token encrypted AES-256-GCM)
+
+### OAuth Flow Per Platform
+
+| Platform | Auth URL | Token Endpoint | Method |
+|----------|----------|---|--------|
+| Meta (FB/IG/Threads) | Facebook OAuth Dialog | `graph.facebook.com/{version}/oauth/access_token` | Authorization Code |
+| Twitter | `api.twitter.com/2/oauth2/authorize` | `api.twitter.com/2/oauth2/token` | PKCE (no client secret in request) |
+| LinkedIn | LinkedIn authorization endpoint | `linkedin.com/oauth/v2/accessToken` | Authorization Code |
+| Google (YouTube) | Google accounts consent | `oauth2.googleapis.com/token` | Authorization Code |
+| TikTok | TikTok OAuth authorize | `graph.tiktok.com/oauth/token` | Authorization Code |
+
 ## Related Documentation
 
 - **Tools System**: `docs/03-tools-system.md` (tool registry, policies, execution flow)

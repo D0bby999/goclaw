@@ -46,7 +46,7 @@ func (c *instagramClient) Publish(ctx context.Context, req PublishRequest) (*Pub
 }
 
 func (c *instagramClient) createContainer(ctx context.Context, req PublishRequest) (string, error) {
-	baseURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/media", c.igID)
+	baseURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/media", GraphVersion, c.igID)
 	body := map[string]any{
 		"caption":      req.Content,
 		"access_token": c.token,
@@ -88,7 +88,7 @@ func (c *instagramClient) createContainer(ctx context.Context, req PublishReques
 }
 
 func (c *instagramClient) createChildContainer(ctx context.Context, m MediaItem) (string, error) {
-	baseURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/media", c.igID)
+	baseURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/media", GraphVersion, c.igID)
 	body := map[string]any{
 		"is_carousel_item": true,
 		"access_token":     c.token,
@@ -111,7 +111,7 @@ func (c *instagramClient) createChildContainer(ctx context.Context, m MediaItem)
 
 func (c *instagramClient) waitReady(ctx context.Context, containerID string) error {
 	for i := 0; i < 30; i++ {
-		apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s?fields=status_code&access_token=%s", containerID, c.token)
+		apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s?fields=status_code&access_token=%s", GraphVersion, containerID, c.token)
 		var resp struct {
 			StatusCode string `json:"status_code"`
 		}
@@ -130,7 +130,7 @@ func (c *instagramClient) waitReady(ctx context.Context, containerID string) err
 }
 
 func (c *instagramClient) publishContainer(ctx context.Context, containerID string) (*PublishResult, error) {
-	baseURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s/media_publish", c.igID)
+	baseURL := fmt.Sprintf("https://graph.facebook.com/%s/%s/media_publish", GraphVersion, c.igID)
 	body := map[string]any{
 		"creation_id":  containerID,
 		"access_token": c.token,
@@ -149,7 +149,7 @@ func (c *instagramClient) publishContainer(ctx context.Context, containerID stri
 }
 
 func (c *instagramClient) RefreshToken(ctx context.Context, refreshToken string) (*TokenResult, error) {
-	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/oauth/access_token?grant_type=ig_refresh_token&access_token=%s", c.token)
+	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/oauth/access_token?grant_type=ig_refresh_token&access_token=%s", GraphVersion, c.token)
 	var resp struct {
 		AccessToken string `json:"access_token"`
 		ExpiresIn   int    `json:"expires_in"`
@@ -164,7 +164,7 @@ func (c *instagramClient) RefreshToken(ctx context.Context, refreshToken string)
 }
 
 func (c *instagramClient) GetProfile(ctx context.Context) (*ProfileResult, error) {
-	apiURL := fmt.Sprintf("https://graph.facebook.com/v19.0/%s?fields=id,username,name,profile_picture_url&access_token=%s", c.igID, c.token)
+	apiURL := fmt.Sprintf("https://graph.facebook.com/%s/%s?fields=id,username,name,profile_picture_url&access_token=%s", GraphVersion, c.igID, c.token)
 	var resp struct {
 		ID      string `json:"id"`
 		Name    string `json:"name"`
