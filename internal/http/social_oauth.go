@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"time"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/social"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
@@ -360,6 +362,9 @@ func (h *SocialOAuthHandler) handleOAuthCallback(w http.ResponseWriter, r *http.
 		h.renderCallbackResult(w, r, false, "failed to save account", platform)
 		return
 	}
+
+	// Store all pages to social_pages table (Facebook/Instagram).
+	h.storeAccountPages(r, platform, account.ID, tokenResp.AccessToken)
 
 	displayName := profile.Name
 	if displayName == "" {
@@ -724,4 +729,33 @@ func splitSpace(s string) []string {
 		}
 	}
 	return parts
+}
+
+// storeAccountPages fetches and stores pages for Facebook/Instagram accounts.
+func (h *SocialOAuthHandler) storeAccountPages(r *http.Request, platform string, accountID uuid.UUID, accessToken string) {
+	switch platform {
+	case "facebook":
+		pages, err := h.fetchFacebookPages(r, accessToken)
+		if err != nil {
+			slog.Warn("social.oauth: fetch pages for storage", "platform", platform, "error", err)
+			return
+		}
+		if err := storeFacebookPages(r.Context(), h.store, accountID, pages); err != nil {
+			slog.Warn("social.oauth: store pages", "platform", platform, "error", err)
+		} else {
+			slog.Info("social.oauth: stored pages", "platform", platform, "count", len(pages))
+		}
+
+	case "instagram":
+		account, err := h.store.GetAccount(r.Context(), accountID)
+		if err != nil {
+			slog.Warn("social.oauth: get account for ig pages", "error", err)
+			return
+		}
+		if err := syncInstagramPages(r, h, h.store, account); err != nil {
+			slog.Warn("social.oauth: store ig pages", "error", err)
+		} else {
+			slog.Info("social.oauth: stored instagram pages", "account_id", accountID)
+		}
+	}
 }

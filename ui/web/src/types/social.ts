@@ -39,6 +39,20 @@ export interface SocialAccount {
   updated_at: string;
 }
 
+export interface SocialPage {
+  id: string;
+  account_id: string;
+  page_id: string;
+  page_name?: string;
+  page_type: string;
+  avatar_url?: string;
+  is_default: boolean;
+  metadata?: Record<string, unknown>;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SocialPostTarget {
   id: string;
   post_id: string;

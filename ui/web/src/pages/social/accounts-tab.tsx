@@ -88,6 +88,7 @@ export function AccountsTab({ accounts, loading, onCreate, onUpdate, onDelete, o
         onSubmit={onCreate}
         onUpdate={onUpdate}
         editAccount={editAccount}
+        onOAuthComplete={onRefresh}
       />
 
       {deleteTarget && (

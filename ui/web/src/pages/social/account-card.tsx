@@ -2,6 +2,7 @@ import { Pencil, Trash2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { StatusBadge } from "@/components/shared/status-badge";
 import { PlatformIcon, PLATFORM_META } from "./platform-icons";
+import { AccountPagesPanel } from "./account-pages-panel";
 import { formatDate } from "@/lib/format";
 import type { SocialAccount } from "@/types/social";
 
@@ -49,6 +50,8 @@ export function AccountCard({ account, onEdit, onDelete }: AccountCardProps) {
           </Button>
         </div>
       </div>
+
+      <AccountPagesPanel accountId={account.id} platform={account.platform} />
     </div>
   );
 }

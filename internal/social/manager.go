@@ -2,6 +2,7 @@ package social
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"time"
@@ -123,6 +124,12 @@ func (m *Manager) publishSingleTarget(ctx context.Context, post *store.SocialPos
 		return
 	}
 
+	// For Facebook/Instagram: override metadata with default page from social_pages table.
+	metadata := account.Metadata
+	if account.Platform == "facebook" || account.Platform == "instagram" {
+		metadata = m.applyDefaultPage(ctx, account)
+	}
+
 	// Create platform client — use browser automation for TikTok when no API token.
 	var client PlatformClient
 	if account.Platform == "tiktok" && account.AccessToken == "" {
@@ -137,7 +144,7 @@ func (m *Manager) publishSingleTarget(ctx context.Context, post *store.SocialPos
 		client = newTikTokBrowserClient(m.browserMgr, m.cookieSrc, account.Metadata)
 	} else {
 		var clientErr error
-		client, clientErr = NewClient(account.Platform, account.AccessToken, account.Metadata)
+		client, clientErr = NewClient(account.Platform, account.AccessToken, metadata)
 		if clientErr != nil {
 			errMsg := clientErr.Error()
 			_ = m.store.UpdateTarget(ctx, target.ID, map[string]any{
@@ -195,6 +202,48 @@ func (m *Manager) publishSingleTarget(ctx context.Context, post *store.SocialPos
 		"post_id", target.PostID,
 		"platform_post_id", result.PlatformPostID,
 	)
+}
+
+// applyDefaultPage checks social_pages for a default page and merges its
+// token/ID into account metadata. Falls back to original metadata if no page found.
+func (m *Manager) applyDefaultPage(ctx context.Context, account *store.SocialAccountData) json.RawMessage {
+	page, err := m.store.GetDefaultPage(ctx, account.ID)
+	if err != nil || page == nil {
+		return account.Metadata // fallback to legacy metadata
+	}
+
+	// Merge page data into a copy of the metadata.
+	var meta map[string]any
+	if account.Metadata != nil {
+		_ = json.Unmarshal(account.Metadata, &meta)
+	}
+	if meta == nil {
+		meta = map[string]any{}
+	}
+
+	switch account.Platform {
+	case "facebook":
+		meta["page_id"] = page.PageID
+		meta["page_token"] = page.PageToken
+		if page.PageName != nil {
+			meta["page_name"] = *page.PageName
+		}
+	case "instagram":
+		if page.PageToken != "" {
+			meta["page_token"] = page.PageToken
+		}
+		// ig_user_id may come from page metadata
+		var pageMeta map[string]string
+		if page.Metadata != nil {
+			_ = json.Unmarshal(page.Metadata, &pageMeta)
+		}
+		if igID, ok := pageMeta["ig_user_id"]; ok {
+			meta["ig_user_id"] = igID
+		}
+	}
+
+	b, _ := json.Marshal(meta)
+	return b
 }
 
 // ProcessDuePosts finds and publishes all scheduled posts that are due.

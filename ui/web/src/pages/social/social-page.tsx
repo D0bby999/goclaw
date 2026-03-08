@@ -5,11 +5,13 @@ import { Button } from "@/components/ui/button";
 import { PageHeader } from "@/components/shared/page-header";
 import { useSocialAccounts } from "./hooks/use-social-accounts";
 import { useSocialPosts } from "./hooks/use-social-posts";
+import { useAllSocialPages } from "./hooks/use-all-social-pages";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { PostsTab } from "./posts-tab";
 import { AccountsTab } from "./accounts-tab";
+import { PagesTab } from "./pages-tab";
 
-type Tab = "posts" | "accounts";
+type Tab = "posts" | "accounts" | "pages";
 
 export function SocialPage() {
   const navigate = useNavigate();
@@ -17,13 +19,20 @@ export function SocialPage() {
 
   const { accounts, loading: accountsLoading, refresh: refreshAccounts, createAccount, updateAccount, deleteAccount } = useSocialAccounts();
   const { posts, total, loading: postsLoading, refresh: refreshPosts, deletePost, publishPost } = useSocialPosts();
+  const { pages, loading: pagesLoading, syncAll, setDefault, deletePage, createPage } = useAllSocialPages(accounts);
 
-  const loading = tab === "posts" ? postsLoading : accountsLoading;
+  const loading = tab === "posts" ? postsLoading : tab === "pages" ? pagesLoading : accountsLoading;
   const spinning = useMinLoading(loading);
 
   const refresh = () => {
     refreshAccounts();
     refreshPosts();
+  };
+
+  const tabLabel = (t: Tab) => {
+    if (t === "posts") return `Posts (${total})`;
+    if (t === "accounts") return `Accounts (${accounts.length})`;
+    return `Pages (${pages.length})`;
   };
 
   return (
@@ -47,7 +56,7 @@ export function SocialPage() {
 
       {/* Tabs */}
       <div className="mt-4 flex gap-1 border-b">
-        {(["posts", "accounts"] as const).map((t) => (
+        {(["posts", "accounts", "pages"] as const).map((t) => (
           <button
             key={t}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -55,7 +64,7 @@ export function SocialPage() {
             }`}
             onClick={() => setTab(t)}
           >
-            {t === "posts" ? `Posts (${total})` : `Accounts (${accounts.length})`}
+            {tabLabel(t)}
           </button>
         ))}
       </div>
@@ -69,7 +78,7 @@ export function SocialPage() {
             onDelete={deletePost}
             onPublish={publishPost}
           />
-        ) : (
+        ) : tab === "accounts" ? (
           <AccountsTab
             accounts={accounts}
             loading={accountsLoading}
@@ -77,6 +86,16 @@ export function SocialPage() {
             onUpdate={updateAccount}
             onDelete={deleteAccount}
             onRefresh={refreshAccounts}
+          />
+        ) : (
+          <PagesTab
+            pages={pages}
+            accounts={accounts}
+            loading={pagesLoading}
+            onSyncAll={syncAll}
+            onSetDefault={setDefault}
+            onDelete={deletePage}
+            onCreate={createPage}
           />
         )}
       </div>

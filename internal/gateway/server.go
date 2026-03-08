@@ -50,6 +50,7 @@ type Server struct {
 	socialHandler           *httpapi.SocialHandler           // social management API
 	filesHandler            *httpapi.FilesHandler            // workspace file serving
 	socialOAuthHandler      *httpapi.SocialOAuthHandler      // social OAuth flow API
+	socialPagesHandler     *httpapi.SocialPagesHandler      // social pages management API
 	agentStore         store.AgentStore             // for context injection in tools_invoke
 
 	upgrader    websocket.Upgrader
@@ -227,6 +228,9 @@ func (s *Server) BuildMux() *http.ServeMux {
 	if s.socialOAuthHandler != nil {
 		s.socialOAuthHandler.RegisterRoutes(mux)
 	}
+	if s.socialPagesHandler != nil {
+		s.socialPagesHandler.RegisterRoutes(mux)
+	}
 
 	// MCP bridge: expose GoClaw tools to Claude CLI via streamable-http.
 	// Only listens on localhost (CLI runs on the same machine).
@@ -376,6 +380,7 @@ func (s *Server) SetSocialHandler(h *httpapi.SocialHandler) { s.socialHandler = 
 func (s *Server) SetFilesHandler(h *httpapi.FilesHandler) { s.filesHandler = h }
 
 func (s *Server) SetSocialOAuthHandler(h *httpapi.SocialOAuthHandler) { s.socialOAuthHandler = h }
+func (s *Server) SetSocialPagesHandler(h *httpapi.SocialPagesHandler) { s.socialPagesHandler = h }
 
 // SetAgentStore sets the agent store for context injection in tools_invoke.
 func (s *Server) SetAgentStore(as store.AgentStore) { s.agentStore = as }

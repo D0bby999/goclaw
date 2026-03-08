@@ -748,6 +748,9 @@ func runGateway() {
 		}
 		socialOAuthH := httpapi.NewSocialOAuthHandler(pgStores.Social, socialManager, cfg.Gateway.Token, oauthCfgs)
 		server.SetSocialOAuthHandler(socialOAuthH)
+
+		socialPagesH := httpapi.NewSocialPagesHandler(pgStores.Social, socialManager, socialOAuthH, cfg.Gateway.Token)
+		server.SetSocialPagesHandler(socialPagesH)
 		var enabledPlatforms []string
 		if oauthCfgs.Meta != nil {
 			enabledPlatforms = append(enabledPlatforms, "facebook", "instagram", "threads")

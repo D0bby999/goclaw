@@ -66,6 +66,7 @@ export const queryKeys = {
   },
   social: {
     accounts: ["social", "accounts"] as const,
+    pages: (accountId: string) => ["social", "pages", accountId] as const,
     posts: (params: Record<string, unknown>) => ["social", "posts", params] as const,
     post: (id: string) => ["social", "post", id] as const,
     platforms: ["social", "platforms"] as const,

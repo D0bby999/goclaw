@@ -30,6 +30,8 @@ interface AccountConnectDialogProps {
   onOAuthComplete?: () => void;
 }
 
+type ConnectMode = "oauth" | "manual";
+
 export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, editAccount, onOAuthComplete }: AccountConnectDialogProps) {
   const http = useHttp();
   const [platform, setPlatform] = useState<SocialPlatform>("twitter");
@@ -40,10 +42,10 @@ export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, e
   const [saving, setSaving] = useState(false);
   const [oauthPlatforms, setOAuthPlatforms] = useState<Record<string, boolean>>({});
   const [oauthLoading, setOAuthLoading] = useState<SocialPlatform | null>(null);
+  const [mode, setMode] = useState<ConnectMode>("oauth");
 
   const isEdit = !!editAccount;
-  // Bluesky is always manual-only; all other platforms use OAuth if configured.
-  const isOAuthPlatform = !isEdit && platform !== "bluesky" && oauthPlatforms[platform] === true;
+  const hasOAuth = !isEdit && platform !== "bluesky" && oauthPlatforms[platform] === true;
 
   // Check OAuth status on mount.
   useEffect(() => {
@@ -55,7 +57,6 @@ export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, e
   // Listen for OAuth callback result via postMessage.
   const handleOAuthMessage = useCallback(
     (event: MessageEvent) => {
-      // Validate origin to prevent cross-origin message spoofing.
       if (event.origin !== window.location.origin) return;
       if (event.data?.type !== "social-oauth-result") return;
       const { success, message } = event.data;
@@ -76,6 +77,7 @@ export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, e
     return () => window.removeEventListener("message", handleOAuthMessage);
   }, [handleOAuthMessage]);
 
+  // Reset form state when dialog opens or edit account changes.
   useEffect(() => {
     if (editAccount) {
       setPlatform(editAccount.platform);
@@ -89,8 +91,16 @@ export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, e
       setAccessToken("");
       setUsername("");
       setDisplayName("");
+      setMode("oauth");
     }
   }, [editAccount, open]);
+
+  // Auto-switch mode when platform changes.
+  useEffect(() => {
+    if (!isEdit) {
+      setMode(hasOAuth ? "oauth" : "manual");
+    }
+  }, [platform, hasOAuth, isEdit]);
 
   const canSubmit = platform && platformUserId && (isEdit || accessToken);
 
@@ -99,7 +109,6 @@ export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, e
     try {
       const res = await http.get<{ auth_url: string }>("/v1/social/oauth/start", { platform: p });
       if (res.auth_url) {
-        // Open popup for OAuth.
         const w = 600, h = 700;
         const left = window.screenX + (window.outerWidth - w) / 2;
         const top = window.screenY + (window.outerHeight - h) / 2;
@@ -134,6 +143,8 @@ export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, e
     }
   };
 
+  const showManualForm = isEdit || mode === "manual" || !hasOAuth;
+
   return (
     <Dialog open={open} onOpenChange={onOpenChange}>
       <DialogContent className="sm:max-w-md">
@@ -167,11 +178,12 @@ export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, e
             </div>
           )}
 
-          {/* OAuth connect button for Meta platforms */}
-          {isOAuthPlatform && (
-            <div className="space-y-2">
+          {/* OAuth connect (primary) */}
+          {!isEdit && hasOAuth && mode === "oauth" && (
+            <div className="space-y-3">
               <Button
                 className="w-full gap-2"
+                size="lg"
                 onClick={() => handleOAuthConnect(platform)}
                 disabled={oauthLoading !== null}
               >
@@ -181,61 +193,81 @@ export function AccountConnectDialog({ open, onOpenChange, onSubmit, onUpdate, e
                   : `Connect with ${PLATFORM_META[platform].label}`}
               </Button>
               <p className="text-xs text-muted-foreground text-center">
-                Connect via {PLATFORM_META[platform]?.label ?? platform} OAuth to securely link your account.
+                Securely connect via {PLATFORM_META[platform]?.label ?? platform} OAuth. No tokens needed.
               </p>
-              <div className="relative my-2">
-                <div className="absolute inset-0 flex items-center"><span className="w-full border-t" /></div>
-                <div className="relative flex justify-center text-xs"><span className="bg-background px-2 text-muted-foreground">or enter manually</span></div>
-              </div>
+              <button
+                type="button"
+                className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+                onClick={() => setMode("manual")}
+              >
+                Or enter access token manually
+              </button>
             </div>
           )}
 
-          {/* Manual token entry */}
-          <div className="space-y-2">
-            <Label>Platform User ID</Label>
-            <Input
-              value={platformUserId}
-              onChange={(e) => setPlatformUserId(e.target.value)}
-              placeholder="e.g. 123456789"
-              disabled={isEdit}
-            />
-          </div>
+          {/* Manual token entry (secondary) */}
+          {showManualForm && (
+            <div className="space-y-4">
+              {/* Switch back to OAuth link */}
+              {!isEdit && hasOAuth && mode === "manual" && (
+                <button
+                  type="button"
+                  className="w-full text-xs text-muted-foreground hover:text-foreground transition-colors underline underline-offset-2"
+                  onClick={() => setMode("oauth")}
+                >
+                  Connect with {PLATFORM_META[platform]?.label ?? platform} OAuth instead
+                </button>
+              )}
 
-          <div className="space-y-2">
-            <Label>{isEdit ? "New Access Token (leave blank to keep current)" : "Access Token"}</Label>
-            <Input
-              type="password"
-              value={accessToken}
-              onChange={(e) => setAccessToken(e.target.value)}
-              placeholder={isEdit ? "Leave blank to keep current" : "Paste access token"}
-            />
-          </div>
+              <div className="space-y-2">
+                <Label>Platform User ID</Label>
+                <Input
+                  value={platformUserId}
+                  onChange={(e) => setPlatformUserId(e.target.value)}
+                  placeholder="e.g. 123456789"
+                  disabled={isEdit}
+                />
+              </div>
 
-          <div className="grid grid-cols-2 gap-3">
-            <div className="space-y-2">
-              <Label>Username</Label>
-              <Input
-                value={username}
-                onChange={(e) => setUsername(e.target.value)}
-                placeholder="@handle"
-              />
+              <div className="space-y-2">
+                <Label>{isEdit ? "New Access Token (leave blank to keep current)" : "Access Token"}</Label>
+                <Input
+                  type="password"
+                  value={accessToken}
+                  onChange={(e) => setAccessToken(e.target.value)}
+                  placeholder={isEdit ? "Leave blank to keep current" : "Paste access token"}
+                />
+              </div>
+
+              <div className="grid grid-cols-2 gap-3">
+                <div className="space-y-2">
+                  <Label>Username</Label>
+                  <Input
+                    value={username}
+                    onChange={(e) => setUsername(e.target.value)}
+                    placeholder="@handle"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label>Display Name</Label>
+                  <Input
+                    value={displayName}
+                    onChange={(e) => setDisplayName(e.target.value)}
+                    placeholder="Display name"
+                  />
+                </div>
+              </div>
             </div>
-            <div className="space-y-2">
-              <Label>Display Name</Label>
-              <Input
-                value={displayName}
-                onChange={(e) => setDisplayName(e.target.value)}
-                placeholder="Display name"
-              />
-            </div>
-          </div>
+          )}
         </div>
 
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>Cancel</Button>
-          <Button onClick={handleSubmit} disabled={!canSubmit || saving}>
-            {saving ? "..." : isEdit ? "Save" : "Connect"}
-          </Button>
+          {showManualForm && (
+            <Button onClick={handleSubmit} disabled={!canSubmit || saving}>
+              {saving ? "..." : isEdit ? "Save" : "Connect"}
+            </Button>
+          )}
         </DialogFooter>
       </DialogContent>
     </Dialog>

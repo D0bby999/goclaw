@@ -119,6 +119,20 @@ type SocialPostMediaData struct {
 	CreatedAt       time.Time       `json:"created_at"`
 }
 
+// SocialPageData represents a page/channel within a social account.
+type SocialPageData struct {
+	BaseModel
+	AccountID uuid.UUID       `json:"account_id"`
+	PageID    string          `json:"page_id"`
+	PageName  *string         `json:"page_name,omitempty"`
+	PageToken string          `json:"-"`
+	PageType  string          `json:"page_type"`
+	AvatarURL *string         `json:"avatar_url,omitempty"`
+	IsDefault bool            `json:"is_default"`
+	Metadata  json.RawMessage `json:"metadata,omitempty"`
+	Status    string          `json:"status"`
+}
+
 // SocialOAuthStateData represents a temporary OAuth state for CSRF protection.
 type SocialOAuthStateData struct {
 	ID          uuid.UUID       `json:"id"`
@@ -160,6 +174,15 @@ type SocialStore interface {
 	ListMedia(ctx context.Context, postID uuid.UUID) ([]SocialPostMediaData, error)
 	RemoveMedia(ctx context.Context, id uuid.UUID) error
 	ReorderMedia(ctx context.Context, postID uuid.UUID, mediaIDs []uuid.UUID) error
+
+	// Pages
+	CreatePage(ctx context.Context, p *SocialPageData) error
+	GetPage(ctx context.Context, id uuid.UUID) (*SocialPageData, error)
+	ListPages(ctx context.Context, accountID uuid.UUID) ([]SocialPageData, error)
+	GetDefaultPage(ctx context.Context, accountID uuid.UUID) (*SocialPageData, error)
+	UpdatePage(ctx context.Context, id uuid.UUID, updates map[string]any) error
+	DeletePage(ctx context.Context, id uuid.UUID) error
+	SetDefaultPage(ctx context.Context, accountID, pageID uuid.UUID) error
 
 	// OAuth
 	CreateOAuthState(ctx context.Context, s *SocialOAuthStateData) error
