@@ -16,9 +16,9 @@ CREATE TABLE social_accounts (
     connected_at TIMESTAMPTZ DEFAULT NOW(),
     created_at TIMESTAMPTZ DEFAULT NOW(),
     updated_at TIMESTAMPTZ DEFAULT NOW(),
-    deleted_at TIMESTAMPTZ,
-    UNIQUE(platform, platform_user_id) WHERE deleted_at IS NULL
+    deleted_at TIMESTAMPTZ
 );
+CREATE UNIQUE INDEX idx_social_accounts_unique_platform_user ON social_accounts(platform, platform_user_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_social_accounts_owner ON social_accounts(owner_id) WHERE deleted_at IS NULL;
 CREATE INDEX idx_social_accounts_platform ON social_accounts(platform) WHERE deleted_at IS NULL;
 
