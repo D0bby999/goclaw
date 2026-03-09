@@ -6,12 +6,14 @@ import { PageHeader } from "@/components/shared/page-header";
 import { useSocialAccounts } from "./hooks/use-social-accounts";
 import { useSocialPosts } from "./hooks/use-social-posts";
 import { useAllSocialPages } from "./hooks/use-all-social-pages";
+import { useContentSchedules } from "./hooks/use-content-schedules";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { PostsTab } from "./posts-tab";
 import { AccountsTab } from "./accounts-tab";
 import { PagesTab } from "./pages-tab";
+import { SchedulesTab } from "./schedules-tab";
 
-type Tab = "posts" | "accounts" | "pages";
+type Tab = "posts" | "accounts" | "pages" | "schedules";
 
 export function SocialPage() {
   const navigate = useNavigate();
@@ -20,8 +22,9 @@ export function SocialPage() {
   const { accounts, loading: accountsLoading, refresh: refreshAccounts, createAccount, updateAccount, deleteAccount } = useSocialAccounts();
   const { posts, total, loading: postsLoading, refresh: refreshPosts, deletePost, publishPost } = useSocialPosts();
   const { pages, loading: pagesLoading, syncAll, setDefault, deletePage, createPage } = useAllSocialPages(accounts);
+  const { schedules, loading: schedulesLoading } = useContentSchedules();
 
-  const loading = tab === "posts" ? postsLoading : tab === "pages" ? pagesLoading : accountsLoading;
+  const loading = tab === "posts" ? postsLoading : tab === "pages" ? pagesLoading : tab === "schedules" ? schedulesLoading : accountsLoading;
   const spinning = useMinLoading(loading);
 
   const refresh = () => {
@@ -32,7 +35,8 @@ export function SocialPage() {
   const tabLabel = (t: Tab) => {
     if (t === "posts") return `Posts (${total})`;
     if (t === "accounts") return `Accounts (${accounts.length})`;
-    return `Pages (${pages.length})`;
+    if (t === "pages") return `Pages (${pages.length})`;
+    return `Schedules (${schedules.length})`;
   };
 
   return (
@@ -56,7 +60,7 @@ export function SocialPage() {
 
       {/* Tabs */}
       <div className="mt-4 flex gap-1 border-b">
-        {(["posts", "accounts", "pages"] as const).map((t) => (
+        {(["posts", "accounts", "pages", "schedules"] as const).map((t) => (
           <button
             key={t}
             className={`px-4 py-2 text-sm font-medium border-b-2 transition-colors ${
@@ -87,7 +91,7 @@ export function SocialPage() {
             onDelete={deleteAccount}
             onRefresh={refreshAccounts}
           />
-        ) : (
+        ) : tab === "pages" ? (
           <PagesTab
             pages={pages}
             accounts={accounts}
@@ -97,6 +101,8 @@ export function SocialPage() {
             onDelete={deletePage}
             onCreate={createPage}
           />
+        ) : (
+          <SchedulesTab />
         )}
       </div>
     </div>

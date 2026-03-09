@@ -104,6 +104,49 @@ export interface SocialPost {
   media?: SocialPostMedia[];
 }
 
+export interface ContentSchedulePage {
+  id: string;
+  schedule_id: string;
+  page_id: string;
+  page_name?: string;
+  page_type: string;
+  platform: string;
+  account_id: string;
+}
+
+export interface ContentSchedule {
+  id: string;
+  owner_id: string;
+  name: string;
+  enabled: boolean;
+  content_source: "agent";
+  agent_id?: string;
+  prompt?: string;
+  cron_expression: string;
+  timezone: string;
+  cron_job_id?: string;
+  last_run_at?: string;
+  last_status?: string;
+  last_error?: string;
+  posts_count: number;
+  pages?: ContentSchedulePage[];
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ContentScheduleLog {
+  id: string;
+  schedule_id: string;
+  post_id?: string;
+  status: string;
+  error?: string;
+  content_preview?: string;
+  pages_targeted: number;
+  pages_published: number;
+  duration_ms?: number;
+  ran_at: string;
+}
+
 export interface PlatformLimits {
   max_chars: number;
   max_hashtags: number;
