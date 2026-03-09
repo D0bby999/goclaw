@@ -62,17 +62,30 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 
 		result := outcome.Result
 
-		// If job wants delivery to a channel, send the agent's response.
+		// If job wants delivery, send the agent's response to each recipient.
+		// Channel and To may be comma-separated for multi-recipient delivery.
 		if job.Payload.Deliver && job.Payload.Channel != "" && job.Payload.To != "" {
-			outMsg := bus.OutboundMessage{
-				Channel: job.Payload.Channel,
-				ChatID:  job.Payload.To,
-				Content: result.Content,
+			chList := strings.Split(job.Payload.Channel, ",")
+			toList := strings.Split(job.Payload.To, ",")
+			for i, to := range toList {
+				to = strings.TrimSpace(to)
+				if to == "" {
+					continue
+				}
+				ch := strings.TrimSpace(chList[0])
+				if i < len(chList) {
+					ch = strings.TrimSpace(chList[i])
+				}
+				outMsg := bus.OutboundMessage{
+					Channel: ch,
+					ChatID:  to,
+					Content: result.Content,
+				}
+				if strings.HasPrefix(to, "-") {
+					outMsg.Metadata = map[string]string{"group_id": to}
+				}
+				msgBus.PublishOutbound(outMsg)
 			}
-			if peerKind == "group" {
-				outMsg.Metadata = map[string]string{"group_id": job.Payload.To}
-			}
-			msgBus.PublishOutbound(outMsg)
 		}
 
 		cronResult := &store.CronJobResult{
