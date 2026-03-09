@@ -4,6 +4,23 @@ All notable changes to GoClaw project. Format: YYYY-MM-DD | Type | Brief descrip
 
 ## 2026
 
+### 2026-03-09
+
+**feat:** Media Storage — S3/R2 cloud storage backends with local fallback
+
+- New pluggable storage backends: AWS S3, Cloudflare R2, local filesystem (default)
+- Factory pattern auto-detects backend (S3 > R2 > Local)
+- Storage interface: `SaveFile()`, `LoadPath()`, `PublicURL()`, `DeleteSession()`
+- Implementations: `LocalStorage` (filesystem), `S3Storage` (S3 + R2 compatible)
+- Configuration: `MediaConfig` struct with `MediaS3Config` and `MediaR2Config`
+- AWS S3 config: bucket, region, endpoint (optional), prefix, public URL, URL expiry, force path style
+- Cloudflare R2 config: bucket, account_id, prefix, public URL, URL expiry
+- Environment variables (secrets via env only, never in config.json):
+  - S3: `GOCLAW_S3_BUCKET`, `GOCLAW_S3_REGION`, `GOCLAW_S3_ACCESS_KEY_ID`, `GOCLAW_S3_SECRET_ACCESS_KEY`, `GOCLAW_S3_ENDPOINT`, `GOCLAW_S3_PREFIX`, `GOCLAW_S3_PUBLIC_URL`, `GOCLAW_S3_URL_EXPIRY`, `GOCLAW_S3_FORCE_PATH_STYLE`
+  - R2: `GOCLAW_R2_BUCKET`, `GOCLAW_R2_ACCOUNT_ID`, `GOCLAW_R2_ACCESS_KEY_ID`, `GOCLAW_R2_SECRET_ACCESS_KEY`, `GOCLAW_R2_PREFIX`, `GOCLAW_R2_PUBLIC_URL`, `GOCLAW_R2_URL_EXPIRY`
+- Files: `internal/media/storage.go` (interface), `internal/media/store.go` (renamed from Store to LocalStorage), `internal/media/s3.go` (S3Storage impl), `internal/media/factory.go` (NewStorage factory), `internal/config/config.go` (MediaConfig structs)
+- HTTP endpoints unchanged (`/v1/media/upload`, `/v1/media/{id}`)
+
 ### 2026-03-08
 
 **feat:** Social Media Management — OAuth 2.0 integration for 7 platforms
