@@ -60,6 +60,9 @@ const (
 	EventProjectOutput        = "project.output"
 	EventProjectSessionStatus = "project.session.status"
 
+	// Trace lifecycle events (realtime trace/span updates).
+	EventTraceUpdated = "trace.updated"
+
 	// Cache invalidation events (internal, not forwarded to WS clients).
 	EventCacheInvalidate = "cache.invalidate"
 

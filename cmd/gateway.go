@@ -20,6 +20,7 @@ import (
 	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/discord"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/feishu"
+	slackchannel "github.com/nextlevelbuilder/goclaw/internal/channels/slack"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/telegram"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/whatsapp"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/zalo"
@@ -29,6 +30,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway/methods"
 	mcpbridge "github.com/nextlevelbuilder/goclaw/internal/mcp"
+	"github.com/nextlevelbuilder/goclaw/internal/media"
 	"github.com/nextlevelbuilder/goclaw/internal/permissions"
 	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/sandbox"
@@ -63,37 +65,6 @@ func runGateway() {
 	if err != nil {
 		slog.Error("failed to load config", "error", err)
 		os.Exit(1)
-	}
-
-	// Auto-detect: if no provider API key is configured, help the user.
-	// Also trigger auto-onboard when config file doesn't exist (first run),
-	// even if env vars provide API keys — DB seeding is required.
-	_, cfgStatErr := os.Stat(cfgPath)
-	configMissing := os.IsNotExist(cfgStatErr)
-	if !cfg.HasAnyProvider() || configMissing {
-		// Docker / CI: env vars provide API keys → non-interactive auto-onboard.
-		if canAutoOnboard() {
-			if runAutoOnboard(cfgPath) {
-				cfg, _ = config.Load(cfgPath)
-			} else {
-				os.Exit(1)
-			}
-		} else if _, statErr := os.Stat(cfgPath); statErr == nil {
-			// Config file exists — user already onboarded but forgot to source .env.local.
-			envPath := filepath.Join(filepath.Dir(cfgPath), ".env.local")
-			fmt.Println("No AI provider API key found. Did you forget to load your secrets?")
-			fmt.Println()
-			fmt.Printf("  source %s && ./goclaw\n", envPath)
-			fmt.Println()
-			fmt.Println("Or re-run the setup wizard:  ./goclaw onboard")
-			os.Exit(1)
-		} else {
-			// No config file at all → first time, redirect to onboard wizard.
-			fmt.Println("No configuration found. Starting setup wizard...")
-			fmt.Println()
-			runOnboard()
-			return
-		}
 	}
 
 	// Create core components
@@ -198,6 +169,10 @@ func runGateway() {
 	toolsReg.Register(tools.NewReadImageTool(providerRegistry))
 	toolsReg.Register(tools.NewCreateImageTool(providerRegistry))
 
+	// Audio generation tool (MiniMax music + ElevenLabs sound effects)
+	toolsReg.Register(tools.NewCreateAudioTool(providerRegistry,
+		cfg.Tts.ElevenLabs.APIKey, cfg.Tts.ElevenLabs.BaseURL))
+
 	// TTS (text-to-speech) system
 	ttsMgr := setupTTS(cfg)
 	if ttsMgr != nil {
@@ -256,7 +231,7 @@ func runGateway() {
 					batchMeta["origin_session_key"] = meta.OriginSessionKey
 				}
 				// Collect media from all items in the batch.
-				var batchMedia []string
+				var batchMedia []bus.MediaFile
 				for _, item := range items {
 					batchMedia = append(batchMedia, item.Media...)
 				}
@@ -322,9 +297,11 @@ func runGateway() {
 
 	// Block exec from accessing sensitive directories (data dir, .goclaw, config file).
 	// Prevents `cp /app/data/config.json workspace/` and similar exfiltration.
+	// Exception: .goclaw/skills-store/ is allowed (skills may contain executable scripts).
 	if execTool, ok := toolsReg.Get("exec"); ok {
 		if et, ok := execTool.(*tools.ExecTool); ok {
 			et.DenyPaths(dataDir, ".goclaw/")
+			et.AllowPathExemptions(".goclaw/skills-store/")
 			if cfgPath := os.Getenv("GOCLAW_CONFIG"); cfgPath != "" {
 				et.DenyPaths(cfgPath)
 			}
@@ -356,6 +333,16 @@ func runGateway() {
 	}
 	if pgStores.Tracing != nil {
 		traceCollector = tracing.NewCollector(pgStores.Tracing)
+		traceCollector.OnFlush = func(traceIDs []uuid.UUID) {
+			ids := make([]string, len(traceIDs))
+			for i, id := range traceIDs {
+				ids[i] = id.String()
+			}
+			msgBus.Broadcast(bus.Event{
+				Name:    protocol.EventTraceUpdated,
+				Payload: map[string]any{"trace_ids": ids},
+			})
+		}
 		traceCollector.Start()
 		slog.Info("LLM tracing enabled")
 	}
@@ -484,6 +471,7 @@ func runGateway() {
 	skillsLoader := skills.NewLoader(workspace, globalSkillsDir, "")
 	skillSearchTool := tools.NewSkillSearchTool(skillsLoader)
 	toolsReg.Register(skillSearchTool)
+	toolsReg.Register(tools.NewUseSkillTool())
 	slog.Info("skill_search tool registered", "skills", len(skillsLoader.ListSkills()))
 
 	// Wire skills-store directory into filesystem loader so agents
@@ -626,7 +614,8 @@ func runGateway() {
 	}
 
 	var mcpPool *mcpbridge.Pool
-	contextFileInterceptor, delegateMgr, mcpPool = wireExtras(pgStores, agentRouter, providerRegistry, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, dynamicLoader, redisClient)
+	var mediaStore *media.Store
+	contextFileInterceptor, delegateMgr, mcpPool, mediaStore = wireExtras(pgStores, agentRouter, providerRegistry, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, dynamicLoader, redisClient)
 	if mcpPool != nil {
 		defer mcpPool.Stop()
 	}
@@ -667,6 +656,17 @@ func runGateway() {
 	// Workspace file serving endpoint — serves files by absolute path, auth-token protected.
 	// Supports media from any agent workspace (each agent has its own workspace from DB).
 	server.SetFilesHandler(httpapi.NewFilesHandler(cfg.Gateway.Token))
+
+	// Storage file management — browse/delete files under ~/.goclaw/ (excluding skills dirs).
+	server.SetStorageHandler(httpapi.NewStorageHandler(config.ExpandHome("~/.goclaw"), cfg.Gateway.Token))
+
+	// Media upload endpoint — accepts multipart file uploads, returns temp path + MIME type.
+	server.SetMediaUploadHandler(httpapi.NewMediaUploadHandler(cfg.Gateway.Token))
+
+	// Media serve endpoint — serves persisted media files by ID for WS/web clients.
+	if mediaStore != nil {
+		server.SetMediaServeHandler(httpapi.NewMediaServeHandler(mediaStore, cfg.Gateway.Token))
+	}
 
 	// Seed + apply builtin tool disables
 	if pgStores.BuiltinTools != nil {
@@ -822,6 +822,7 @@ func runGateway() {
 		instanceLoader.RegisterFactory("zalo_oa", zalo.Factory)
 		instanceLoader.RegisterFactory("zalo_personal", zalopersonal.Factory)
 		instanceLoader.RegisterFactory("whatsapp", whatsapp.Factory)
+		instanceLoader.RegisterFactory("slack", slackchannel.Factory)
 		if err := instanceLoader.LoadAll(context.Background()); err != nil {
 			slog.Error("failed to load channel instances from DB", "error", err)
 		}
@@ -878,6 +879,16 @@ func runGateway() {
 		} else {
 			channelMgr.RegisterChannel("zalo_personal", zp)
 			slog.Info("zca (zalo personal) channel enabled (config)")
+		}
+	}
+
+	if cfg.Channels.Slack.Enabled && cfg.Channels.Slack.BotToken != "" && cfg.Channels.Slack.AppToken != "" && instanceLoader == nil {
+		sl, err := slackchannel.New(cfg.Channels.Slack, msgBus, nil)
+		if err != nil {
+			slog.Error("failed to initialize slack channel", "error", err)
+		} else {
+			channelMgr.RegisterChannel("slack", sl)
+			slog.Info("slack channel enabled (config)")
 		}
 	}
 
@@ -1035,7 +1046,7 @@ func runGateway() {
 	defer sched.Stop()
 
 	// Start cron service with job handler (routes through scheduler's cron lane)
-	pgStores.Cron.SetOnJob(makeCronJobHandler(sched, msgBus, cfg))
+	pgStores.Cron.SetOnJob(makeCronJobHandler(sched, msgBus, cfg, channelMgr))
 	if err := pgStores.Cron.Start(); err != nil {
 		slog.Warn("cron service failed to start", "error", err)
 	}
@@ -1118,7 +1129,7 @@ func runGateway() {
 		webFetchTool.UpdatePolicy(updatedCfg.Tools.WebFetch.Policy, updatedCfg.Tools.WebFetch.AllowedDomains, updatedCfg.Tools.WebFetch.BlockedDomains)
 	})
 
-	go consumeInboundMessages(ctx, msgBus, agentRouter, cfg, sched, channelMgr, consumerTeamStore, quotaChecker, delegateMgr)
+	go consumeInboundMessages(ctx, msgBus, agentRouter, cfg, sched, channelMgr, consumerTeamStore, quotaChecker, delegateMgr, pgStores.Sessions, pgStores.Agents)
 
 	go func() {
 		sig := <-sigCh

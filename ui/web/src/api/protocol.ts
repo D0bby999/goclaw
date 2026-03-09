@@ -246,6 +246,9 @@ export const Events = {
   // Projects orchestration events
   PROJECT_OUTPUT: "project.output",
   PROJECT_SESSION_STATUS: "project.session.status",
+
+  // Trace lifecycle
+  TRACE_UPDATED: "trace.updated",
 } as const;
 
 /** All event names relevant to team debug view */

@@ -90,6 +90,9 @@ const PostComposerPage = lazy(() =>
 const PostDetailPage = lazy(() =>
   import("@/pages/social/post-detail-page").then((m) => ({ default: m.PostDetailPage })),
 );
+const StoragePage = lazy(() =>
+  import("@/pages/storage/storage-page").then((m) => ({ default: m.StoragePage })),
+);
 const SetupPage = lazy(() =>
   import("@/pages/setup/setup-page").then((m) => ({ default: m.SetupPage })),
 );
@@ -165,6 +168,7 @@ export function AppRoutes() {
           <Route path={ROUTES.PROJECTS} element={<ProjectsPage key="projects-list" />} />
           <Route path={ROUTES.PROJECT_DETAIL} element={<ProjectsPage key="projects-detail" />} />
           <Route path={ROUTES.PROJECTS_SESSION} element={<ProjectSessionPage />} />
+          <Route path={ROUTES.STORAGE} element={<StoragePage />} />
         </Route>
 
         {/* Catch-all → overview */}

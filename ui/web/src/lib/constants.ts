@@ -36,6 +36,7 @@ export const ROUTES = {
   SOCIAL_POSTS_NEW: "/social/posts/new",
   SOCIAL_POSTS_DETAIL: "/social/posts/:id",
   SOCIAL_POSTS_EDIT: "/social/posts/:id/edit",
+  STORAGE: "/storage",
   SETUP: "/setup",
 } as const;
 

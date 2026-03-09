@@ -75,19 +75,35 @@ type DiscordConfig struct {
 	AllowFrom      FlexibleStringSlice `json:"allow_from"`
 	DMPolicy       string              `json:"dm_policy,omitempty"`       // "open" (default), "allowlist", "disabled"
 	GroupPolicy    string              `json:"group_policy,omitempty"`    // "open" (default), "allowlist", "disabled"
-	RequireMention *bool               `json:"require_mention,omitempty"` // require @bot mention in groups (default true)
-	HistoryLimit   int                 `json:"history_limit,omitempty"`   // max pending group messages for context (default 50, 0=disabled)
-	BlockReply     *bool               `json:"block_reply,omitempty"`     // override gateway block_reply (nil = inherit)
+	RequireMention    *bool               `json:"require_mention,omitempty"` // require @bot mention in groups (default true)
+	HistoryLimit      int                 `json:"history_limit,omitempty"`   // max pending group messages for context (default 50, 0=disabled)
+	BlockReply        *bool               `json:"block_reply,omitempty"`     // override gateway block_reply (nil = inherit)
+	MediaMaxBytes     int64               `json:"media_max_bytes,omitempty"` // max media download size (default 25MB)
+	STTProxyURL       string              `json:"stt_proxy_url,omitempty"`
+	STTAPIKey         string              `json:"stt_api_key,omitempty"`
+	STTTenantID       string              `json:"stt_tenant_id,omitempty"`
+	STTTimeoutSeconds int                 `json:"stt_timeout_seconds,omitempty"`
+	VoiceAgentID      string              `json:"voice_agent_id,omitempty"`
 }
 
 type SlackConfig struct {
 	Enabled        bool                `json:"enabled"`
-	BotToken       string              `json:"bot_token"`
-	AppToken       string              `json:"app_token"`
+	BotToken       string              `json:"bot_token"`                    // xoxb-... (Bot User OAuth Token)
+	AppToken       string              `json:"app_token"`                    // xapp-... (App-Level Token for Socket Mode)
+	UserToken      string              `json:"user_token,omitempty"`         // xoxp-... (Optional: custom bot identity)
 	AllowFrom      FlexibleStringSlice `json:"allow_from"`
-	DMPolicy       string              `json:"dm_policy,omitempty"`       // "open" (default), "allowlist", "disabled"
-	GroupPolicy    string              `json:"group_policy,omitempty"`    // "open" (default), "allowlist", "disabled"
-	RequireMention bool                `json:"require_mention,omitempty"` // only respond to @bot in channels (default true)
+	DMPolicy       string              `json:"dm_policy,omitempty"`          // "pairing" (default), "allowlist", "open", "disabled"
+	GroupPolicy    string              `json:"group_policy,omitempty"`       // "open" (default), "pairing", "allowlist", "disabled"
+	RequireMention *bool               `json:"require_mention,omitempty"`    // require @bot mention in channels (default true)
+	HistoryLimit   int                 `json:"history_limit,omitempty"`      // max pending group messages for context (default 50, 0=disabled)
+	DMStream       *bool               `json:"dm_stream,omitempty"`          // enable streaming for DMs (default false)
+	GroupStream    *bool               `json:"group_stream,omitempty"`       // enable streaming for groups (default false)
+	NativeStream   *bool               `json:"native_stream,omitempty"`      // use Slack ChatStreamer API if available (default false)
+	ReactionLevel  string              `json:"reaction_level,omitempty"`     // "off" (default), "minimal", "full"
+	BlockReply     *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
+	DebounceDelay  int                 `json:"debounce_delay,omitempty"`     // ms delay before dispatching rapid messages (default 300, 0=disabled)
+	ThreadTTL      *int                `json:"thread_ttl,omitempty"`         // hours before thread participation expires (default 24, 0=disabled — always require @mention)
+	MediaMaxBytes  int64               `json:"media_max_bytes,omitempty"`    // max file download size in bytes (default 20MB)
 }
 
 type WhatsAppConfig struct {
@@ -116,6 +132,7 @@ type ZaloPersonalConfig struct {
 	DMPolicy        string              `json:"dm_policy,omitempty"`        // "pairing" (default), "allowlist", "open", "disabled"
 	GroupPolicy     string              `json:"group_policy,omitempty"`     // "open" (default), "allowlist", "disabled"
 	RequireMention  *bool               `json:"require_mention,omitempty"`  // require @bot mention in groups (default true)
+	HistoryLimit    int                 `json:"history_limit,omitempty"`    // max pending group messages for context (default 50, 0=disabled)
 	CredentialsPath string              `json:"credentials_path,omitempty"` // path to saved cookies JSON
 	BlockReply      *bool               `json:"block_reply,omitempty"`      // override gateway block_reply (nil = inherit)
 }
@@ -143,6 +160,11 @@ type FeishuConfig struct {
 	ReactionLevel     string              `json:"reaction_level,omitempty"`     // "off" (default), "minimal", "full" — typing emoji reactions
 	HistoryLimit      int                 `json:"history_limit,omitempty"`
 	BlockReply        *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
+	STTProxyURL       string              `json:"stt_proxy_url,omitempty"`
+	STTAPIKey         string              `json:"stt_api_key,omitempty"`
+	STTTenantID       string              `json:"stt_tenant_id,omitempty"`
+	STTTimeoutSeconds int                 `json:"stt_timeout_seconds,omitempty"`
+	VoiceAgentID      string              `json:"voice_agent_id,omitempty"`
 }
 
 // ProvidersConfig maps provider name to its config.
