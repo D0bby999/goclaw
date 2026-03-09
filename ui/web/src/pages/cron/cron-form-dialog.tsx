@@ -11,10 +11,19 @@ import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
-import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
+import { Checkbox } from "@/components/ui/checkbox";
 import type { CronJob, CronSchedule } from "./hooks/use-cron";
 import { slugify, isValidSlug } from "@/lib/slug";
-import { useChannelInstances } from "@/pages/channels/hooks/use-channel-instances";
+import { useWs } from "@/hooks/use-ws";
+import { Methods } from "@/api/protocol";
+import { useQuery } from "@tanstack/react-query";
+import { useAuthStore } from "@/stores/use-auth-store";
+
+interface PairedDevice {
+  sender_id: string;
+  channel: string;
+  chat_id: string;
+}
 
 interface CronFormDialogProps {
   open: boolean;
@@ -33,6 +42,33 @@ interface CronFormDialogProps {
 
 type ScheduleKind = "every" | "cron" | "at";
 
+/** Encode multiple recipients as comma-separated "channel::chatId" pairs */
+function encodeRecipients(selected: string[]): { channel: string; to: string } {
+  const channels = new Set<string>();
+  const tos: string[] = [];
+  for (const s of selected) {
+    const [ch, id] = s.split("::");
+    if (ch && id) {
+      channels.add(ch);
+      tos.push(id);
+    }
+  }
+  return { channel: [...channels].join(","), to: tos.join(",") };
+}
+
+/** Decode stored channel/to back to selection keys */
+function decodeRecipients(channel: string, to: string): string[] {
+  if (!channel || !to) return [];
+  const channels = channel.split(",");
+  const tos = to.split(",");
+  // If single channel, pair with all tos
+  if (channels.length === 1) {
+    return tos.map((t) => `${channels[0]}::${t}`);
+  }
+  // Multi channel: zip
+  return tos.map((t, i) => `${channels[i] || channels[0]}::${t}`);
+}
+
 export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFormDialogProps) {
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
@@ -41,13 +77,20 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
   const [everyValue, setEveryValue] = useState("60");
   const [cronExpr, setCronExpr] = useState("0 * * * *");
   const [deliver, setDeliver] = useState(false);
-  const [channel, setChannel] = useState("");
-  const [to, setTo] = useState("");
+  const [selected, setSelected] = useState<string[]>([]);
   const [saving, setSaving] = useState(false);
 
-  const { instances: channelInstances } = useChannelInstances({ limit: 50 });
+  const ws = useWs();
+  const connected = useAuthStore((s) => s.connected);
+  const { data: pairedDevices = [] } = useQuery({
+    queryKey: ["paired-devices"],
+    queryFn: async () => {
+      const res = await ws.call<{ paired: PairedDevice[] }>(Methods.PAIRING_LIST, {});
+      return res.paired ?? [];
+    },
+    enabled: connected && open,
+  });
 
-  // Populate form when editing
   useEffect(() => {
     if (!open) return;
     if (editJob) {
@@ -58,8 +101,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
       setEveryValue(editJob.schedule.everyMs ? String(editJob.schedule.everyMs / 1000) : "60");
       setCronExpr(editJob.schedule.expr ?? "0 * * * *");
       setDeliver(editJob.payload?.deliver ?? false);
-      setChannel(editJob.payload?.channel ?? "");
-      setTo(editJob.payload?.to ?? "");
+      setSelected(decodeRecipients(editJob.payload?.channel ?? "", editJob.payload?.to ?? ""));
     } else {
       setName("");
       setMessage("");
@@ -68,8 +110,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
       setEveryValue("60");
       setCronExpr("0 * * * *");
       setDeliver(false);
-      setChannel("");
-      setTo("");
+      setSelected([]);
     }
   }, [open, editJob]);
 
@@ -85,6 +126,8 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
       schedule = { kind: "at", atMs: Date.now() + 60000 };
     }
 
+    const { channel, to } = encodeRecipients(selected);
+
     setSaving(true);
     try {
       await onSubmit({
@@ -92,7 +135,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
         schedule,
         message: message.trim(),
         agentId: agentId.trim() || undefined,
-        deliver,
+        deliver: deliver && selected.length > 0,
         channel: deliver ? channel : undefined,
         to: deliver ? to : undefined,
       });
@@ -102,6 +145,13 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
     }
   };
 
+  const toggleDevice = (key: string) => {
+    setSelected((prev) =>
+      prev.includes(key) ? prev.filter((k) => k !== key) : [...prev, key],
+    );
+  };
+
+  const devices = pairedDevices.filter((d) => d.chat_id);
   const isEdit = !!editJob;
 
   return (
@@ -191,40 +241,42 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
             <div className="flex items-center justify-between">
               <div>
                 <Label>Send result to channel</Label>
-                <p className="text-xs text-muted-foreground">Deliver agent response to a bot/channel</p>
+                <p className="text-xs text-muted-foreground">Deliver agent response to bots/channels</p>
               </div>
               <Switch checked={deliver} onCheckedChange={setDeliver} />
             </div>
 
             {deliver && (
-              <>
-                <div className="space-y-2">
-                  <Label>Channel</Label>
-                  <Select value={channel} onValueChange={setChannel}>
-                    <SelectTrigger>
-                      <SelectValue placeholder="Select channel..." />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {channelInstances.map((ch) => (
-                        <SelectItem key={ch.id} value={ch.channel_type}>
-                          {ch.name || ch.channel_type} ({ch.channel_type})
-                        </SelectItem>
-                      ))}
-                      <SelectItem value="telegram">Telegram</SelectItem>
-                      <SelectItem value="discord">Discord</SelectItem>
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="space-y-2">
-                  <Label>Chat ID / Recipient</Label>
-                  <Input
-                    value={to}
-                    onChange={(e) => setTo(e.target.value)}
-                    placeholder="e.g. 7690222162"
-                  />
-                  <p className="text-xs text-muted-foreground">Telegram user/group ID, Discord channel ID, etc.</p>
-                </div>
-              </>
+              <div className="space-y-2">
+                <Label>Deliver to</Label>
+                {devices.length === 0 ? (
+                  <p className="text-sm text-muted-foreground">No paired devices found. Pair a bot first.</p>
+                ) : (
+                  <div className="space-y-1.5 max-h-40 overflow-y-auto rounded-md border p-2">
+                    {devices.map((d) => {
+                      const key = `${d.channel}::${d.chat_id}`;
+                      const label = d.chat_id.startsWith("-")
+                        ? `Group ${d.chat_id}`
+                        : `User ${d.sender_id}`;
+                      return (
+                        <label key={key} className="flex items-center gap-2 cursor-pointer text-sm hover:bg-muted/50 rounded px-1 py-0.5">
+                          <Checkbox
+                            checked={selected.includes(key)}
+                            onCheckedChange={() => toggleDevice(key)}
+                          />
+                          <span className="flex-1">{label}</span>
+                          <span className="text-xs text-muted-foreground">{d.channel}</span>
+                        </label>
+                      );
+                    })}
+                  </div>
+                )}
+                {selected.length > 0 && (
+                  <p className="text-xs text-muted-foreground">
+                    {selected.length} recipient{selected.length > 1 ? "s" : ""} selected
+                  </p>
+                )}
+              </div>
             )}
           </div>
         </div>
