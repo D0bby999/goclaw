@@ -51,13 +51,12 @@ func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg 
 
 		result := outcome.Result
 
-		// If job wants delivery to a channel, send the cron reminder message
-		// directly (not the agent response) so it appears as a bot notification.
+		// If job wants delivery to a channel, send the agent's response.
 		if job.Payload.Deliver && job.Payload.Channel != "" && job.Payload.To != "" {
 			msgBus.PublishOutbound(bus.OutboundMessage{
 				Channel: job.Payload.Channel,
 				ChatID:  job.Payload.To,
-				Content: job.Payload.Message,
+				Content: result.Content,
 			})
 		}
 

@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Clock, Plus, Play, Trash2, History, RefreshCw } from "lucide-react";
+import { Clock, Plus, Play, Trash2, History, RefreshCw, Loader2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Switch } from "@/components/ui/switch";
@@ -29,15 +29,17 @@ function formatSchedule(job: CronJob): string {
 }
 
 export function CronPage() {
-  const { jobs, loading, refresh, createJob, toggleJob, deleteJob, runJob, getRunLog } = useCron();
+  const { jobs, loading, refresh, createJob, updateJob, toggleJob, deleteJob, runJob, getRunLog } = useCron();
   const spinning = useMinLoading(loading);
   const showSkeleton = useDeferredLoading(loading && jobs.length === 0);
-  const [showCreate, setShowCreate] = useState(false);
+  const [showForm, setShowForm] = useState(false);
+  const [editTarget, setEditTarget] = useState<CronJob | null>(null);
   const [deleteTarget, setDeleteTarget] = useState<CronJob | null>(null);
   const [runLogTarget, setRunLogTarget] = useState<CronJob | null>(null);
   const [runLogEntries, setRunLogEntries] = useState<CronRunLogEntry[]>([]);
   const [runLogLoading, setRunLogLoading] = useState(false);
   const [toggleTarget, setToggleTarget] = useState<{ job: CronJob; enabled: boolean } | null>(null);
+  const [runningJobs, setRunningJobs] = useState<Set<string>>(new Set());
 
   const { pageItems, pagination, setPage, setPageSize } = usePagination(jobs);
 
@@ -62,7 +64,7 @@ export function CronPage() {
             <Button variant="outline" size="sm" onClick={refresh} disabled={spinning} className="gap-1">
               <RefreshCw className={"h-3.5 w-3.5" + (spinning ? " animate-spin" : "")} /> Refresh
             </Button>
-            <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1">
+            <Button size="sm" onClick={() => { setEditTarget(null); setShowForm(true); }} className="gap-1">
               <Plus className="h-3.5 w-3.5" /> New Job
             </Button>
           </div>
@@ -78,7 +80,7 @@ export function CronPage() {
             title="No cron jobs"
             description="Create a cron job to schedule recurring agent tasks."
             action={
-              <Button size="sm" onClick={() => setShowCreate(true)} className="gap-1">
+              <Button size="sm" onClick={() => { setEditTarget(null); setShowForm(true); }} className="gap-1">
                 <Plus className="h-3.5 w-3.5" /> New Job
               </Button>
             }
@@ -124,10 +126,34 @@ export function CronPage() {
                         <Button
                           variant="ghost"
                           size="icon"
-                          title="Run now"
-                          onClick={() => runJob(job.id)}
+                          title={runningJobs.has(job.id) ? "Running..." : "Run now"}
+                          disabled={runningJobs.has(job.id)}
+                          onClick={async () => {
+                            setRunningJobs((prev) => new Set(prev).add(job.id));
+                            try {
+                              await runJob(job.id);
+                            } finally {
+                              setRunningJobs((prev) => {
+                                const next = new Set(prev);
+                                next.delete(job.id);
+                                return next;
+                              });
+                            }
+                          }}
                         >
-                          <Play className="h-3.5 w-3.5" />
+                          {runningJobs.has(job.id) ? (
+                            <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                          ) : (
+                            <Play className="h-3.5 w-3.5" />
+                          )}
+                        </Button>
+                        <Button
+                          variant="ghost"
+                          size="icon"
+                          title="Edit"
+                          onClick={() => { setEditTarget(job); setShowForm(true); }}
+                        >
+                          <Pencil className="h-3.5 w-3.5" />
                         </Button>
                         <Button
                           variant="ghost"
@@ -164,9 +190,16 @@ export function CronPage() {
       </div>
 
       <CronFormDialog
-        open={showCreate}
-        onOpenChange={setShowCreate}
-        onSubmit={createJob}
+        open={showForm}
+        onOpenChange={setShowForm}
+        editJob={editTarget}
+        onSubmit={async (data) => {
+          if (editTarget) {
+            await updateJob(editTarget.id, data);
+          } else {
+            await createJob(data);
+          }
+        }}
       />
 
       {toggleTarget && (

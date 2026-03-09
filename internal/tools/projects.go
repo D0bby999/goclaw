@@ -13,6 +13,67 @@ import (
 )
 
 // ============================================================
+// projects_list
+// ============================================================
+
+type ProjectsListTool struct {
+	store store.ProjectStore
+}
+
+func NewProjectsListTool(s store.ProjectStore) *ProjectsListTool {
+	return &ProjectsListTool{store: s}
+}
+
+func (t *ProjectsListTool) Name() string { return "projects_list" }
+func (t *ProjectsListTool) Description() string {
+	return "List available projects. Use this to discover project IDs before starting sessions."
+}
+
+func (t *ProjectsListTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type":       "object",
+		"properties": map[string]interface{}{},
+	}
+}
+
+func (t *ProjectsListTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+	userID := resolveAgentIDString(ctx)
+	if userID == "" {
+		userID = "admin"
+	}
+
+	projects, err := t.store.ListAccessibleProjects(ctx, userID)
+	if err != nil {
+		return ErrorResult("list projects: " + err.Error())
+	}
+
+	type projectEntry struct {
+		ID      string `json:"id"`
+		Name    string `json:"name"`
+		Slug    string `json:"slug"`
+		WorkDir string `json:"work_dir"`
+		Status  string `json:"status"`
+	}
+
+	entries := make([]projectEntry, 0, len(projects))
+	for _, p := range projects {
+		entries = append(entries, projectEntry{
+			ID:      p.ID.String(),
+			Name:    p.Name,
+			Slug:    p.Slug,
+			WorkDir: p.WorkDir,
+			Status:  p.Status,
+		})
+	}
+
+	out, _ := json.Marshal(map[string]interface{}{
+		"count":    len(entries),
+		"projects": entries,
+	})
+	return SilentResult(string(out))
+}
+
+// ============================================================
 // project_session_start
 // ============================================================
 
@@ -298,6 +359,62 @@ func (t *ProjectSessionsListTool) Execute(ctx context.Context, args map[string]i
 		"total":    total,
 		"count":    len(entries),
 		"sessions": entries,
+	})
+	return SilentResult(string(out))
+}
+
+// ============================================================
+// project_session_stop
+// ============================================================
+
+type ProjectSessionStopTool struct {
+	store   store.ProjectStore
+	manager *claudecode.ProcessManager
+}
+
+func NewProjectSessionStopTool(s store.ProjectStore, m *claudecode.ProcessManager) *ProjectSessionStopTool {
+	return &ProjectSessionStopTool{store: s, manager: m}
+}
+
+func (t *ProjectSessionStopTool) Name() string { return "project_session_stop" }
+func (t *ProjectSessionStopTool) Description() string {
+	return "Stop a running project session. Use when coding task is complete or needs to be cancelled."
+}
+
+func (t *ProjectSessionStopTool) Parameters() map[string]interface{} {
+	return map[string]interface{}{
+		"type": "object",
+		"properties": map[string]interface{}{
+			"session_id": map[string]interface{}{
+				"type":        "string",
+				"description": "Session UUID to stop",
+			},
+		},
+		"required": []string{"session_id"},
+	}
+}
+
+func (t *ProjectSessionStopTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+	sessionIDStr, _ := args["session_id"].(string)
+	if sessionIDStr == "" {
+		return ErrorResult("session_id is required")
+	}
+	sessionID, err := uuid.Parse(sessionIDStr)
+	if err != nil {
+		return ErrorResult("invalid session_id: " + err.Error())
+	}
+
+	if !t.manager.IsRunning(sessionID) {
+		return ErrorResult("session is not running")
+	}
+
+	if err := t.manager.Stop(ctx, sessionID); err != nil {
+		return ErrorResult("stop failed: " + err.Error())
+	}
+
+	out, _ := json.Marshal(map[string]interface{}{
+		"session_id": sessionID.String(),
+		"status":     "stopped",
 	})
 	return SilentResult(string(out))
 }

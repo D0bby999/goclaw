@@ -525,11 +525,9 @@ func runGateway() {
 	toolsReg.Register(tools.NewCronTool(pgStores.Cron))
 	slog.Info("cron tool registered")
 
-	// News tools (save, query, sources)
-	toolsReg.Register(tools.NewNewsSaveTool(pgStores.News))
-	toolsReg.Register(tools.NewNewsQueryTool(pgStores.News))
-	toolsReg.Register(tools.NewNewsSourcesTool(pgStores.News))
-	slog.Info("news tools registered")
+	// News tool (unified: save, query, sources, ideas)
+	toolsReg.Register(tools.NewNewsTool(pgStores.News))
+	slog.Info("news tool registered")
 
 	// Social management
 	social.GraphVersion = cfg.Social.FacebookGraphVersion()
@@ -703,9 +701,11 @@ func runGateway() {
 		methods.NewProjectsMethods(pgStores.Projects, projectManager, msgBus, pgStores.Teams, permPE.IsOwner).Register(server.Router())
 
 		// Agent tools for project session management
+		toolsReg.Register(tools.NewProjectsListTool(pgStores.Projects))
 		toolsReg.Register(tools.NewProjectSessionStartTool(pgStores.Projects, projectManager))
 		toolsReg.Register(tools.NewProjectSessionStatusTool(pgStores.Projects, projectManager))
 		toolsReg.Register(tools.NewProjectSessionsListTool(pgStores.Projects))
+		toolsReg.Register(tools.NewProjectSessionStopTool(pgStores.Projects, projectManager))
 
 		// Store for channel injection and graceful shutdown
 		projectManagerForShutdown = projectManager

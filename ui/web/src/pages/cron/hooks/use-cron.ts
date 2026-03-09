@@ -122,7 +122,7 @@ export function useCron() {
   const runJob = useCallback(
     async (jobId: string) => {
       try {
-        await ws.call(Methods.CRON_RUN, { jobId, mode: "force" });
+        await ws.call(Methods.CRON_RUN, { jobId, mode: "force" }, 600_000);
         toast.success("Cron job triggered");
       } catch (err) {
         toast.error("Failed to run cron job", err instanceof Error ? err.message : "Unknown error");
@@ -144,5 +144,27 @@ export function useCron() {
     [ws],
   );
 
-  return { jobs, loading, refresh: invalidate, createJob, toggleJob, deleteJob, runJob, getRunLog };
+  const updateJob = useCallback(
+    async (jobId: string, params: {
+      name?: string;
+      schedule?: CronSchedule;
+      message?: string;
+      agentId?: string;
+      deliver?: boolean;
+      channel?: string;
+      to?: string;
+    }) => {
+      try {
+        await ws.call(Methods.CRON_UPDATE, { jobId, ...params });
+        await invalidate();
+        toast.success("Cron job updated");
+      } catch (err) {
+        toast.error("Failed to update cron job", err instanceof Error ? err.message : "Unknown error");
+        throw err;
+      }
+    },
+    [ws, invalidate],
+  );
+
+  return { jobs, loading, refresh: invalidate, createJob, updateJob, toggleJob, deleteJob, runJob, getRunLog };
 }
