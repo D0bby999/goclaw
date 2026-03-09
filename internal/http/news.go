@@ -62,6 +62,7 @@ func (h *NewsHandler) handleSourcesCreate(w http.ResponseWriter, r *http.Request
 		SourceType     string          `json:"sourceType"`
 		Config         json.RawMessage `json:"config"`
 		ScrapeInterval string          `json:"scrapeInterval"`
+		Category       string          `json:"category"`
 	}
 	if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
 		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
@@ -85,6 +86,9 @@ func (h *NewsHandler) handleSourcesCreate(w http.ResponseWriter, r *http.Request
 		Config:         body.Config,
 		Enabled:        true,
 		ScrapeInterval: body.ScrapeInterval,
+	}
+	if body.Category != "" {
+		src.Category = &body.Category
 	}
 	if err := h.news.CreateSource(r.Context(), src); err != nil {
 		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": err.Error()})

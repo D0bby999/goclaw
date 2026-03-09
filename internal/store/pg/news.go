@@ -39,22 +39,22 @@ func (s *PGNewsStore) CreateSource(ctx context.Context, src *store.NewsSource) e
 	}
 
 	_, err := s.db.ExecContext(ctx,
-		`INSERT INTO news_sources (id, agent_id, name, source_type, config, enabled, scrape_interval, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9)`,
-		src.ID, src.AgentID, src.Name, src.SourceType, src.Config, src.Enabled, src.ScrapeInterval, now, now,
+		`INSERT INTO news_sources (id, agent_id, name, source_type, config, enabled, scrape_interval, category, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10)`,
+		src.ID, src.AgentID, src.Name, src.SourceType, src.Config, src.Enabled, src.ScrapeInterval, src.Category, now, now,
 	)
 	return err
 }
 
 func (s *PGNewsStore) GetSource(ctx context.Context, id uuid.UUID) (*store.NewsSource, error) {
 	row := s.db.QueryRowContext(ctx,
-		`SELECT id, agent_id, name, source_type, config, enabled, scrape_interval, last_scraped_at, created_at, updated_at
+		`SELECT id, agent_id, name, source_type, config, enabled, scrape_interval, category, last_scraped_at, created_at, updated_at
 		 FROM news_sources WHERE id = $1`, id)
 	return scanSource(row)
 }
 
 func (s *PGNewsStore) ListSources(ctx context.Context, agentID uuid.UUID, enabledOnly bool) ([]store.NewsSource, error) {
-	q := `SELECT id, agent_id, name, source_type, config, enabled, scrape_interval, last_scraped_at, created_at, updated_at
+	q := `SELECT id, agent_id, name, source_type, config, enabled, scrape_interval, category, last_scraped_at, created_at, updated_at
 	      FROM news_sources WHERE agent_id = $1`
 	if enabledOnly {
 		q += ` AND enabled = true`
@@ -208,13 +208,17 @@ func (s *PGNewsStore) DeleteOldItems(ctx context.Context, agentID uuid.UUID, old
 
 func scanSource(row *sql.Row) (*store.NewsSource, error) {
 	var src store.NewsSource
+	var category sql.NullString
 	var lastScraped sql.NullTime
 	err := row.Scan(
 		&src.ID, &src.AgentID, &src.Name, &src.SourceType, &src.Config,
-		&src.Enabled, &src.ScrapeInterval, &lastScraped, &src.CreatedAt, &src.UpdatedAt,
+		&src.Enabled, &src.ScrapeInterval, &category, &lastScraped, &src.CreatedAt, &src.UpdatedAt,
 	)
 	if err != nil {
 		return nil, err
+	}
+	if category.Valid {
+		src.Category = &category.String
 	}
 	if lastScraped.Valid {
 		src.LastScrapedAt = &lastScraped.Time
@@ -226,12 +230,16 @@ func scanSources(rows *sql.Rows) ([]store.NewsSource, error) {
 	var sources []store.NewsSource
 	for rows.Next() {
 		var src store.NewsSource
+		var category sql.NullString
 		var lastScraped sql.NullTime
 		if err := rows.Scan(
 			&src.ID, &src.AgentID, &src.Name, &src.SourceType, &src.Config,
-			&src.Enabled, &src.ScrapeInterval, &lastScraped, &src.CreatedAt, &src.UpdatedAt,
+			&src.Enabled, &src.ScrapeInterval, &category, &lastScraped, &src.CreatedAt, &src.UpdatedAt,
 		); err != nil {
 			return nil, err
+		}
+		if category.Valid {
+			src.Category = &category.String
 		}
 		if lastScraped.Valid {
 			src.LastScrapedAt = &lastScraped.Time

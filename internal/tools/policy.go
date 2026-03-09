@@ -20,6 +20,8 @@ var toolGroups = map[string][]string{
 	"messaging":  {"message", "create_forum_topic"},
 	"delegation": {"handoff", "delegate_search", "evaluate_loop"},
 	"team":       {"team_tasks", "team_message"},
+	"analytics":     {"analytics"},
+	"notifications": {"notification"},
 	// Composite group: all goclaw native tools (excludes MCP/custom plugins).
 	"goclaw": {
 		"read_file", "write_file", "list_files", "edit", "exec",
@@ -32,6 +34,8 @@ var toolGroups = map[string][]string{
 		"skill_search", "mcp_tool_search", "tts",
 		"handoff", "delegate_search", "evaluate_loop",
 		"team_tasks", "team_message",
+		"analytics",
+		"notification",
 	},
 }
 
@@ -67,6 +71,8 @@ var subagentDenyList = []string{
 	"exec", // subagents should not shell out — main agent can still exec
 	"gateway", "agents_list", "whatsapp_login", "session_status",
 	"cron", "memory_search", "memory_get", "sessions_send",
+	"analytics",
+	"notification",
 }
 
 // Leaf subagent deny — additional restrictions at max spawn depth.

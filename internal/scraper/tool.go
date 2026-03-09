@@ -102,7 +102,8 @@ func (t *ScraperTool) Execute(ctx context.Context, args map[string]interface{}) 
 
 	// Create a stealth HTTP client with optional proxy support.
 	opts := []httpclient.Option{httpclient.WithTimeout(5 * time.Minute)}
-	if rot := loadProxiesFromEnv(); rot != nil {
+	rot := loadProxiesFromEnv()
+	if rot != nil {
 		opts = append(opts, httpclient.WithProxy(rot))
 	}
 	client := httpclient.NewClient(opts...)
@@ -115,7 +116,7 @@ func (t *ScraperTool) Execute(ctx context.Context, args map[string]interface{}) 
 	cfg := actor.DefaultConfig()
 	run := actor.RunActor(ctx, a, cfg)
 
-	formatted := FormatRunForLLM(run, actorName)
+	formatted := FormatRunForLLM(run, actorName, rot != nil)
 	return tools.NewResult(formatted)
 }
 

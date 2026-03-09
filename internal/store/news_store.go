@@ -17,6 +17,7 @@ type NewsSource struct {
 	Config         json.RawMessage `json:"config"`         // actor-specific config
 	Enabled        bool            `json:"enabled"`
 	ScrapeInterval string          `json:"scrapeInterval"` // "hourly", "daily", "weekly"
+	Category       *string         `json:"category,omitempty"` // sector: finance, crypto, tech, etc.
 	LastScrapedAt  *time.Time      `json:"lastScrapedAt,omitempty"`
 	CreatedAt      time.Time       `json:"createdAt"`
 	UpdatedAt      time.Time       `json:"updatedAt"`

@@ -11,7 +11,7 @@ import (
 const maxOutputChars = 50000
 
 // FormatRunForLLM formats an actor.Run into a structured string for LLM consumption.
-func FormatRunForLLM(run actor.Run, actorName string) string {
+func FormatRunForLLM(run actor.Run, actorName string, hasProxy bool) string {
 	var b strings.Builder
 
 	fmt.Fprintf(&b, "Scraper: %s\n", actorName)
@@ -37,12 +37,20 @@ func FormatRunForLLM(run actor.Run, actorName string) string {
 
 	if len(run.Errors) > 0 {
 		b.WriteString("\nErrors:\n")
+		hasBlockingError := false
 		for _, e := range run.Errors {
 			fmt.Fprintf(&b, "- [%s] %s", e.Category, e.Message)
 			if url, ok := e.Context["url"]; ok {
 				fmt.Fprintf(&b, " (url: %s)", url)
 			}
 			b.WriteByte('\n')
+			if e.Category == actor.ErrRateLimit || e.Category == actor.ErrAuth || e.Category == actor.ErrNetwork {
+				hasBlockingError = true
+			}
+		}
+		// Suggest proxy when blocked without one configured.
+		if hasBlockingError && !hasProxy {
+			b.WriteString("\nHint: No proxy configured. Set SCRAPER_PROXY_URLS env var (comma-separated) to rotate proxies and avoid rate-limits/blocks.\n")
 		}
 	}
 

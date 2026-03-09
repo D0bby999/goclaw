@@ -66,6 +66,7 @@ func (t *NewsTool) Parameters() map[string]interface{} {
 			"idea_type": map[string]interface{}{"type": "string", "enum": []string{"all", "app", "biz", "key_points"}, "description": "[ideas] Filter idea type. Default: 'all'"},
 			// sources params
 			"enabled_only": map[string]interface{}{"type": "boolean", "description": "[sources] Only enabled sources (default true)"},
+			"category":     map[string]interface{}{"type": "string", "description": "[sources] Filter by category/sector (e.g. finance, crypto, tech)"},
 		},
 		"required": []string{"action"},
 	}
@@ -229,10 +230,28 @@ func (t *NewsTool) execSources(ctx context.Context, args map[string]interface{})
 		return NewResult("No news sources configured. Use the news management API to add sources.")
 	}
 
+	// optionally filter by category client-side
+	categoryFilter, _ := args["category"].(string)
+	if categoryFilter != "" {
+		var filtered []store.NewsSource
+		for _, src := range sources {
+			if src.Category != nil && strings.EqualFold(*src.Category, categoryFilter) {
+				filtered = append(filtered, src)
+			}
+		}
+		sources = filtered
+		if len(sources) == 0 {
+			return NewResult(fmt.Sprintf("No news sources found for category: %s", categoryFilter))
+		}
+	}
+
 	var sb strings.Builder
 	sb.WriteString(fmt.Sprintf("Configured news sources (%d):\n\n", len(sources)))
 	for i, src := range sources {
 		sb.WriteString(fmt.Sprintf("%d. **%s** [%s]\n", i+1, src.Name, src.SourceType))
+		if src.Category != nil {
+			sb.WriteString(fmt.Sprintf("   - Category: %s\n", *src.Category))
+		}
 		sb.WriteString(fmt.Sprintf("   - Config: %s\n", string(src.Config)))
 		sb.WriteString(fmt.Sprintf("   - Interval: %s\n", src.ScrapeInterval))
 		if src.LastScrapedAt != nil {
