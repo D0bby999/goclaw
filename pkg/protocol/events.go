@@ -66,6 +66,9 @@ const (
 	// Cache invalidation events (internal, not forwarded to WS clients).
 	EventCacheInvalidate = "cache.invalidate"
 
+	// Notification events.
+	EventNotification = "notification"
+
 	// Zalo Personal QR login events (client-scoped, not broadcast).
 	EventZaloPersonalQRCode = "zalo.personal.qr.code"
 	EventZaloPersonalQRDone = "zalo.personal.qr.done"

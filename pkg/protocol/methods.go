@@ -175,6 +175,25 @@ const (
 	MethodSocialMediaRemove    = "social.posts.media.remove"
 )
 
+// Notifications
+const (
+	MethodNotificationsList    = "notifications.list"
+	MethodNotificationsUnread  = "notifications.unread_count"
+	MethodNotificationsRead    = "notifications.mark_read"
+	MethodNotificationsReadAll = "notifications.mark_all_read"
+)
+
+// Content schedule management
+const (
+	MethodSchedulesList   = "schedules.list"
+	MethodSchedulesCreate = "schedules.create"
+	MethodSchedulesGet    = "schedules.get"
+	MethodSchedulesUpdate = "schedules.update"
+	MethodSchedulesDelete = "schedules.delete"
+	MethodSchedulesToggle = "schedules.toggle"
+	MethodSchedulesLogs   = "schedules.logs"
+)
+
 // Phase 3+ - NICE TO HAVE methods
 const (
 	MethodLogsTail = "logs.tail"
