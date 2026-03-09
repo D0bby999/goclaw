@@ -159,7 +159,7 @@ export function useCron() {
       to?: string;
     }) => {
       try {
-        await ws.call(Methods.CRON_UPDATE, { jobId, ...params });
+        await ws.call(Methods.CRON_UPDATE, { jobId, patch: params });
         await invalidate();
         toast.success("Cron job updated");
       } catch (err) {
