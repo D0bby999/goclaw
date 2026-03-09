@@ -517,6 +517,14 @@ func runGateway() {
 	toolsReg.Register(tools.NewNewsTool(pgStores.News))
 	slog.Info("news tool registered")
 
+	// Analytics tool
+	toolsReg.Register(tools.NewAnalyticsTool(pgStores.Analytics))
+	slog.Info("analytics tool registered")
+
+	// Notification tool
+	toolsReg.Register(tools.NewNotificationTool(pgStores.Notifications, msgBus))
+	slog.Info("notification tool registered")
+
 	// Social management
 	social.GraphVersion = cfg.Social.FacebookGraphVersion()
 	var socialManager *social.Manager
@@ -779,13 +787,31 @@ func runGateway() {
 		slog.Info("social management enabled")
 	}
 
+	// Content schedule management — HTTP + WS
+	if pgStores.ContentSchedules != nil {
+		scheduleH := httpapi.NewContentScheduleHandler(pgStores.ContentSchedules, pgStores.Cron, cfg.Gateway.Token)
+		server.SetContentScheduleHandler(scheduleH)
+		methods.NewContentScheduleMethods(pgStores.ContentSchedules, pgStores.Cron).Register(server.Router())
+		slog.Info("content schedule management enabled")
+	}
+
 	// Register all RPC methods
 	server.SetLogTee(logTee)
-	pairingMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee, browserMgr, scraperCookieStore, pgStores.News)
+	pairingMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee, browserMgr, scraperCookieStore, pgStores.News, pgStores.Notifications)
 
 	// News HTTP API
 	newsHandler := httpapi.NewNewsHandler(pgStores.News, cfg.Gateway.Token)
 	server.SetNewsHandler(newsHandler)
+
+	// Notifications HTTP API
+	notificationHandler := httpapi.NewNotificationHandler(pgStores.Notifications, cfg.Gateway.Token)
+	server.SetNotificationHandler(notificationHandler)
+	slog.Info("notification HTTP API registered")
+
+	// Analytics HTTP API
+	analyticsHandler := httpapi.NewAnalyticsHandler(pgStores.Analytics, cfg.Gateway.Token)
+	server.SetAnalyticsHandler(analyticsHandler)
+	slog.Info("analytics HTTP API registered")
 
 	// Wire pairing event broadcasts to all WS clients.
 	pairingMethods.SetBroadcaster(server.BroadcastEvent)
@@ -1053,8 +1079,16 @@ func runGateway() {
 	)
 	defer sched.Stop()
 
+	// Build content schedule handler (wires agent scheduler → social publish pipeline).
+	var scheduleHandler *social.ScheduleHandler
+	if pgStores.ContentSchedules != nil && pgStores.Social != nil {
+		contentGen := &scheduleContentGen{sched: sched, cfg: cfg}
+		scheduleHandler = social.NewScheduleHandler(pgStores.ContentSchedules, pgStores.Social, contentGen)
+		slog.Info("content schedule cron handler enabled")
+	}
+
 	// Start cron service with job handler (routes through scheduler's cron lane)
-	pgStores.Cron.SetOnJob(makeCronJobHandler(sched, msgBus, cfg, channelMgr))
+	pgStores.Cron.SetOnJob(makeCronJobHandler(sched, msgBus, cfg, channelMgr, scheduleHandler))
 	pgStores.Cron.SetOnEvent(func(event store.CronEvent) {
 		server.BroadcastEvent(*protocol.NewEvent(protocol.EventCron, event))
 	})

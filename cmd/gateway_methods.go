@@ -14,7 +14,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/pkg/browser"
 )
 
-func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore store.SessionStore, cronStore store.CronStore, pairingStore store.PairingStore, cfg *config.Config, cfgPath, workspace, dataDir string, msgBus *bus.MessageBus, execApprovalMgr *tools.ExecApprovalManager, agentStore store.AgentStore, skillStore store.SkillStore, configSecretsStore store.ConfigSecretsStore, teamStore store.TeamStore, contextFileInterceptor *tools.ContextFileInterceptor, logTee *gateway.LogTee, browserMgr *browser.Manager, cookieStore *scraper.ScraperCookieStore, newsStore store.NewsStore) *methods.PairingMethods {
+func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore store.SessionStore, cronStore store.CronStore, pairingStore store.PairingStore, cfg *config.Config, cfgPath, workspace, dataDir string, msgBus *bus.MessageBus, execApprovalMgr *tools.ExecApprovalManager, agentStore store.AgentStore, skillStore store.SkillStore, configSecretsStore store.ConfigSecretsStore, teamStore store.TeamStore, contextFileInterceptor *tools.ContextFileInterceptor, logTee *gateway.LogTee, browserMgr *browser.Manager, cookieStore *scraper.ScraperCookieStore, newsStore store.NewsStore, notificationStore store.NotificationStore) *methods.PairingMethods {
 	router := server.Router()
 
 	// Phase 1: Core methods
@@ -58,6 +58,9 @@ func registerAllMethods(server *gateway.Server, agents *agent.Router, sessStore 
 
 	// News digest management
 	methods.NewNewsMethods(newsStore).Register(router)
+
+	// Notifications
+	methods.NewNotificationsMethods(notificationStore).Register(router)
 
 	slog.Info("registered all RPC methods",
 		"phase1", []string{"chat", "agents", "sessions", "config"},

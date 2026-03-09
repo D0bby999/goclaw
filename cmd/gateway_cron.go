@@ -5,20 +5,41 @@ import (
 	"fmt"
 	"strings"
 
+	"github.com/google/uuid"
+
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/scheduler"
 	"github.com/nextlevelbuilder/goclaw/internal/sessions"
+	"github.com/nextlevelbuilder/goclaw/internal/social"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
+
+// schedulePrefix is the internal message prefix used to trigger content schedule runs via cron.
+const schedulePrefix = "{internal:content_schedule:"
 
 // makeCronJobHandler creates a cron job handler that routes through the scheduler's cron lane.
 // This ensures per-session concurrency control (same job can't run concurrently)
 // and integration with /stop, /stopall commands.
-func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg *config.Config, channelMgr *channels.Manager) func(job *store.CronJob) (*store.CronJobResult, error) {
+// scheduleHandler is optional; if nil, content schedule jobs are skipped.
+func makeCronJobHandler(sched *scheduler.Scheduler, msgBus *bus.MessageBus, cfg *config.Config, channelMgr *channels.Manager, scheduleHandler *social.ScheduleHandler) func(job *store.CronJob) (*store.CronJobResult, error) {
 	return func(job *store.CronJob) (*store.CronJobResult, error) {
+		// Content schedule detection — intercept before normal agent-turn flow.
+		if strings.HasPrefix(job.Payload.Message, schedulePrefix) {
+			idStr := strings.TrimPrefix(job.Payload.Message, schedulePrefix)
+			idStr = strings.TrimSuffix(idStr, "}")
+			scheduleID, parseErr := uuid.Parse(idStr)
+			if parseErr != nil {
+				return nil, fmt.Errorf("invalid schedule ID in cron message: %w", parseErr)
+			}
+			if scheduleHandler == nil {
+				return &store.CronJobResult{Content: "skipped: no schedule handler"}, nil
+			}
+			return scheduleHandler.Handle(context.Background(), scheduleID)
+		}
+
 		agentID := job.AgentID
 		if agentID == "" {
 			agentID = cfg.ResolveDefaultAgentID()
