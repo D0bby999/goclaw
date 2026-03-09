@@ -45,5 +45,6 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Analytics:        NewPGAnalyticsStore(db),
 		Notifications:    NewPGNotificationStore(db),
 		ContentSchedules: NewPGContentScheduleStore(db),
+		PendingMessages:  NewPGPendingMessageStore(db),
 	}, nil
 }

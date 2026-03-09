@@ -86,4 +86,8 @@ export const queryKeys = {
     session: (id: string) => ["cc", "session", id] as const,
     logs: (sessionId: string) => ["cc", "logs", sessionId] as const,
   },
+  memory: {
+    all: ["memory"] as const,
+    list: (params: Record<string, unknown>) => ["memory", params] as const,
+  },
 };

@@ -38,6 +38,8 @@ export const ROUTES = {
   SOCIAL_POSTS_DETAIL: "/social/posts/:id",
   SOCIAL_POSTS_EDIT: "/social/posts/:id/edit",
   STORAGE: "/storage",
+  PENDING_MESSAGES: "/pending-messages",
+  MEMORY: "/memory",
   SETUP: "/setup",
 } as const;
 

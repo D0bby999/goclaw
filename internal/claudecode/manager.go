@@ -135,12 +135,12 @@ func (m *ProcessManager) spawnAndWatch(ctx context.Context, sessionID, projectID
 	// MCP bridge integration: add --mcp-config, --settings, --disallowedTools
 	var cleanupFuncs []func()
 	if m.gatewayAddr != "" {
-		mcpPath, mcpCleanup, mcpErr := providers.BuildCLIMCPConfig(nil, m.gatewayAddr, m.gatewayToken)
-		if mcpErr != nil {
-			slog.Warn("cc: failed to build MCP config", "error", mcpErr)
-		} else if mcpPath != "" {
-			args = append(args, "--mcp-config", mcpPath)
-			cleanupFuncs = append(cleanupFuncs, mcpCleanup)
+		mcpData := providers.BuildCLIMCPConfigData(nil, m.gatewayAddr, m.gatewayToken)
+		if mcpData != nil {
+			mcpPath := mcpData.WriteMCPConfig(ctx, "cc-"+opts.ProjectID.String(), providers.BridgeContext{})
+			if mcpPath != "" {
+				args = append(args, "--mcp-config", mcpPath)
+			}
 		}
 
 		hooksPath, hooksCleanup, hooksErr := providers.BuildCLIHooksConfig(workDir, true)

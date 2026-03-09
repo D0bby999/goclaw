@@ -32,31 +32,24 @@ type telegramInstanceConfig struct {
 	AllowFrom      []string `json:"allow_from,omitempty"`
 }
 
-// Factory creates a Telegram channel from DB instance data (no agent/team store).
+// Factory creates a Telegram channel from DB instance data (no extra stores).
 func Factory(name string, creds json.RawMessage, cfg json.RawMessage,
 	msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
-	return buildChannel(name, creds, cfg, msgBus, pairingSvc, nil, nil)
+	return buildChannel(name, creds, cfg, msgBus, pairingSvc, nil, nil, nil)
 }
 
-// FactoryWithStores returns a ChannelFactory that includes agent and team stores
-// for group file writer management and /tasks, /task_detail commands.
-func FactoryWithStores(agentStore store.AgentStore, teamStore store.TeamStore) channels.ChannelFactory {
-	return FactoryWithStoresAndProjects(agentStore, teamStore, nil, nil)
-}
-
-// FactoryWithStoresAndProjects returns a ChannelFactory that includes agent, team, and project stores.
-func FactoryWithStoresAndProjects(agentStore store.AgentStore, teamStore store.TeamStore,
-	projectStore store.ProjectStore, projectManager any) channels.ChannelFactory {
-	return FactoryWithAllStores(agentStore, teamStore, projectStore, projectManager, nil, nil, nil)
+// FactoryWithStores returns a ChannelFactory that includes agent, team, and pending message stores.
+func FactoryWithStores(agentStore store.AgentStore, teamStore store.TeamStore, pendingStore store.PendingMessageStore) channels.ChannelFactory {
+	return FactoryWithAllStores(agentStore, teamStore, nil, nil, nil, nil, nil, pendingStore)
 }
 
 // FactoryWithAllStores returns a ChannelFactory that includes all optional stores.
 func FactoryWithAllStores(agentStore store.AgentStore, teamStore store.TeamStore,
 	projectStore store.ProjectStore, projectManager any, newsStore store.NewsStore,
-	socialStore store.SocialStore, socialManager any) channels.ChannelFactory {
+	socialStore store.SocialStore, socialManager any, pendingStore store.PendingMessageStore) channels.ChannelFactory {
 	return func(name string, creds json.RawMessage, cfg json.RawMessage,
 		msgBus *bus.MessageBus, pairingSvc store.PairingStore) (channels.Channel, error) {
-		ch, err := buildChannel(name, creds, cfg, msgBus, pairingSvc, agentStore, teamStore)
+		ch, err := buildChannel(name, creds, cfg, msgBus, pairingSvc, agentStore, teamStore, pendingStore)
 		if err != nil {
 			return nil, err
 		}
@@ -64,15 +57,12 @@ func FactoryWithAllStores(agentStore store.AgentStore, teamStore store.TeamStore
 		if !ok {
 			return ch, nil
 		}
-		// Inject project services if provided
 		if projectStore != nil && projectManager != nil {
 			tg.SetProjectServices(projectStore, projectManager.(*claudecode.ProcessManager))
 		}
-		// Inject news store if provided
 		if newsStore != nil {
 			tg.SetNewsStore(newsStore)
 		}
-		// Inject social services if provided
 		if socialStore != nil {
 			tg.SetSocialServices(socialStore, socialManager)
 		}
@@ -81,7 +71,7 @@ func FactoryWithAllStores(agentStore store.AgentStore, teamStore store.TeamStore
 }
 
 func buildChannel(name string, creds json.RawMessage, cfg json.RawMessage,
-	msgBus *bus.MessageBus, pairingSvc store.PairingStore, agentStore store.AgentStore, teamStore store.TeamStore) (channels.Channel, error) {
+	msgBus *bus.MessageBus, pairingSvc store.PairingStore, agentStore store.AgentStore, teamStore store.TeamStore, pendingStore store.PendingMessageStore) (channels.Channel, error) {
 
 	var c telegramCreds
 	if len(creds) > 0 {
@@ -123,7 +113,7 @@ func buildChannel(name string, creds json.RawMessage, cfg json.RawMessage,
 		tgCfg.GroupPolicy = "pairing"
 	}
 
-	ch, err := New(tgCfg, msgBus, pairingSvc, agentStore, teamStore)
+	ch, err := New(tgCfg, msgBus, pairingSvc, agentStore, teamStore, pendingStore)
 	if err != nil {
 		return nil, err
 	}

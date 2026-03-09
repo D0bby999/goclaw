@@ -23,6 +23,8 @@ import {
   Newspaper,
   Share2,
   HardDrive,
+  Inbox,
+  Brain,
 } from "lucide-react";
 import { SidebarGroup } from "./sidebar-group";
 import { SidebarItem } from "./sidebar-item";
@@ -76,6 +78,7 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
           <SidebarItem to={ROUTES.TEAMS} icon={Users} label="Agent Teams" collapsed={collapsed} />
           <SidebarItem to={ROUTES.PROJECTS} icon={Terminal} label="Projects" collapsed={collapsed} />
           <SidebarItem to={ROUTES.SESSIONS} icon={History} label="Sessions" collapsed={collapsed} />
+          <SidebarItem to={ROUTES.PENDING_MESSAGES} icon={Inbox} label="Pending Messages" collapsed={collapsed} />
           <SidebarItem to={ROUTES.CHANNELS} icon={Radio} label="Channels" collapsed={collapsed} />
           <SidebarItem to={ROUTES.SKILLS} icon={Zap} label="Skills" collapsed={collapsed} />
           <SidebarItem to={ROUTES.CRON} icon={Clock} label="Cron" collapsed={collapsed} />
@@ -84,6 +87,7 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
           <SidebarItem to={ROUTES.CUSTOM_TOOLS} icon={Wrench} label="Custom Tools" collapsed={collapsed} />
           <SidebarItem to={ROUTES.BUILTIN_TOOLS} icon={Package} label="Built-in Tools" collapsed={collapsed} />
           <SidebarItem to={ROUTES.MCP} icon={Plug} label="MCP Servers" collapsed={collapsed} />
+          <SidebarItem to={ROUTES.MEMORY} icon={Brain} label="Memory" collapsed={collapsed} />
         </SidebarGroup>
 
         <SidebarGroup label="Monitoring" collapsed={collapsed}>

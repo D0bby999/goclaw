@@ -26,4 +26,5 @@ type Stores struct {
 	Analytics        AnalyticsStore
 	Notifications    NotificationStore
 	ContentSchedules ContentScheduleStore
+	PendingMessages  PendingMessageStore
 }

@@ -84,7 +84,7 @@ func (c *Channel) SetSocialServices(socialStore store.SocialStore, socialManager
 // pairingSvc is optional (nil = fall back to allowlist only).
 // agentStore is optional (nil = group file writer commands disabled).
 // teamStore is optional (nil = /tasks, /task_detail commands disabled).
-func New(cfg config.TelegramConfig, msgBus *bus.MessageBus, pairingSvc store.PairingStore, agentStore store.AgentStore, teamStore store.TeamStore) (*Channel, error) {
+func New(cfg config.TelegramConfig, msgBus *bus.MessageBus, pairingSvc store.PairingStore, agentStore store.AgentStore, teamStore store.TeamStore, pendingStore store.PendingMessageStore) (*Channel, error) {
 	var opts []telego.BotOption
 
 	if cfg.Proxy != "" {
@@ -104,7 +104,7 @@ func New(cfg config.TelegramConfig, msgBus *bus.MessageBus, pairingSvc store.Pai
 		return nil, fmt.Errorf("create telegram bot: %w", err)
 	}
 
-	base := channels.NewBaseChannel("telegram", msgBus, cfg.AllowFrom)
+	base := channels.NewBaseChannel(channels.TypeTelegram, msgBus, cfg.AllowFrom)
 	base.ValidatePolicy(cfg.DMPolicy, cfg.GroupPolicy)
 
 	requireMention := true
@@ -124,7 +124,7 @@ func New(cfg config.TelegramConfig, msgBus *bus.MessageBus, pairingSvc store.Pai
 		pairingService: pairingSvc,
 		agentStore:     agentStore,
 		teamStore:      teamStore,
-		groupHistory:   channels.NewPendingHistory(),
+		groupHistory:   channels.MakeHistory(channels.TypeTelegram, pendingStore),
 		historyLimit:   historyLimit,
 		requireMention: requireMention,
 	}, nil
@@ -155,6 +155,7 @@ func (c *Channel) Start(ctx context.Context) error {
 	}
 
 	c.SetRunning(true)
+	c.groupHistory.StartFlusher()
 	slog.Info("telegram bot connected", "username", c.bot.Username())
 
 	// Subscribe to project output events and forward to active Telegram sessions
@@ -250,6 +251,7 @@ func (c *Channel) Stop(_ context.Context) error {
 	slog.Info("stopping telegram bot")
 	c.SetRunning(false)
 	c.Bus().Unsubscribe("telegram-project-output")
+	c.groupHistory.StopFlusher()
 
 	if c.pollCancel != nil {
 		c.pollCancel()
