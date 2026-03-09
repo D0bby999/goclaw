@@ -42,5 +42,8 @@ func NewPGStores(cfg store.StoreConfig) (*store.Stores, error) {
 		Projects:         NewPGProjectStore(db, cfg.EncryptionKey),
 		News:             NewPGNewsStore(db),
 		Social:           NewPGSocialStore(db, cfg.EncryptionKey),
+		Analytics:        NewPGAnalyticsStore(db),
+		Notifications:    NewPGNotificationStore(db),
+		ContentSchedules: NewPGContentScheduleStore(db),
 	}, nil
 }

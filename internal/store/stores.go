@@ -23,4 +23,7 @@ type Stores struct {
 	Projects         ProjectStore
 	News             NewsStore
 	Social           SocialStore
+	Analytics        AnalyticsStore
+	Notifications    NotificationStore
+	ContentSchedules ContentScheduleStore
 }
