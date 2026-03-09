@@ -258,6 +258,74 @@ func (c *Config) applyEnvOverrides() {
 		c.Agents.Defaults.Sandbox.NetworkEnabled = v == "true" || v == "1"
 	}
 
+	// Media storage: S3
+	ensureMediaS3 := func() *MediaS3Config {
+		if c.Media.S3 == nil {
+			c.Media.S3 = &MediaS3Config{}
+		}
+		return c.Media.S3
+	}
+	if v := os.Getenv("GOCLAW_S3_BUCKET"); v != "" {
+		ensureMediaS3().Bucket = v
+	}
+	if v := os.Getenv("GOCLAW_S3_REGION"); v != "" {
+		ensureMediaS3().Region = v
+	}
+	if v := os.Getenv("GOCLAW_S3_ACCESS_KEY_ID"); v != "" {
+		ensureMediaS3().AccessKeyID = v
+	} else if c.Media.S3 != nil && c.Media.S3.AccessKeyID == "" {
+		envStr("AWS_ACCESS_KEY_ID", &c.Media.S3.AccessKeyID)
+	}
+	if v := os.Getenv("GOCLAW_S3_SECRET_ACCESS_KEY"); v != "" {
+		ensureMediaS3().SecretAccessKey = v
+	} else if c.Media.S3 != nil && c.Media.S3.SecretAccessKey == "" {
+		envStr("AWS_SECRET_ACCESS_KEY", &c.Media.S3.SecretAccessKey)
+	}
+	if v := os.Getenv("GOCLAW_S3_ENDPOINT"); v != "" {
+		ensureMediaS3().Endpoint = v
+	}
+	if v := os.Getenv("GOCLAW_S3_PREFIX"); v != "" {
+		ensureMediaS3().Prefix = v
+	}
+	if v := os.Getenv("GOCLAW_S3_PUBLIC_URL"); v != "" {
+		ensureMediaS3().PublicURL = v
+	}
+	if v := os.Getenv("GOCLAW_S3_URL_EXPIRY"); v != "" {
+		ensureMediaS3().URLExpiry = v
+	}
+	if v := os.Getenv("GOCLAW_S3_FORCE_PATH_STYLE"); v == "true" || v == "1" {
+		ensureMediaS3().ForcePathStyle = true
+	}
+
+	// Media storage: R2 (Cloudflare)
+	ensureMediaR2 := func() *MediaR2Config {
+		if c.Media.R2 == nil {
+			c.Media.R2 = &MediaR2Config{}
+		}
+		return c.Media.R2
+	}
+	if v := os.Getenv("GOCLAW_R2_BUCKET"); v != "" {
+		ensureMediaR2().Bucket = v
+	}
+	if v := os.Getenv("GOCLAW_R2_ACCOUNT_ID"); v != "" {
+		ensureMediaR2().AccountID = v
+	}
+	if v := os.Getenv("GOCLAW_R2_ACCESS_KEY_ID"); v != "" {
+		ensureMediaR2().AccessKeyID = v
+	}
+	if v := os.Getenv("GOCLAW_R2_SECRET_ACCESS_KEY"); v != "" {
+		ensureMediaR2().SecretAccessKey = v
+	}
+	if v := os.Getenv("GOCLAW_R2_PREFIX"); v != "" {
+		ensureMediaR2().Prefix = v
+	}
+	if v := os.Getenv("GOCLAW_R2_PUBLIC_URL"); v != "" {
+		ensureMediaR2().PublicURL = v
+	}
+	if v := os.Getenv("GOCLAW_R2_URL_EXPIRY"); v != "" {
+		ensureMediaR2().URLExpiry = v
+	}
+
 	// Browser (for Docker-compose browser sidecar overlay)
 	envStr("GOCLAW_BROWSER_REMOTE_URL", &c.Tools.Browser.RemoteURL)
 	if c.Tools.Browser.RemoteURL != "" {

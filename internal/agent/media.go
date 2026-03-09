@@ -88,7 +88,7 @@ func (l *Loop) persistMedia(sessionKey string, files []bus.MediaFile) []provider
 			}
 		}
 
-		id, _, err := l.mediaStore.SaveFile(sessionKey, srcPath, mime)
+		id, err := l.mediaStore.SaveFile(sessionKey, srcPath, mime)
 		if err != nil {
 			slog.Warn("media: failed to persist file", "path", f.Path, "error", err)
 			_ = os.Remove(srcPath)

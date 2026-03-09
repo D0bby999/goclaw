@@ -622,7 +622,7 @@ func runGateway() {
 	}
 
 	var mcpPool *mcpbridge.Pool
-	var mediaStore *media.Store
+	var mediaStore media.Storage
 	contextFileInterceptor, delegateMgr, mcpPool, mediaStore = wireExtras(pgStores, agentRouter, providerRegistry, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, dynamicLoader, redisClient)
 	if mcpPool != nil {
 		defer mcpPool.Stop()

@@ -47,7 +47,7 @@ func wireExtras(
 	sandboxMgr sandbox.Manager,
 	dynamicLoader *tools.DynamicToolLoader,
 	redisClient any, // nil when built without -tags redis or when Redis is unconfigured
-) (*tools.ContextFileInterceptor, *tools.DelegateManager, *mcpbridge.Pool, *media.Store) {
+) (*tools.ContextFileInterceptor, *tools.DelegateManager, *mcpbridge.Pool, media.Storage) {
 	// 1. Build cache instances (in-memory or Redis depending on build tags)
 	agentCtxCache, userCtxCache, gwCache := makeCaches(redisClient)
 
@@ -65,9 +65,11 @@ func wireExtras(
 	}
 
 	// 1c. Persistent media storage for cross-turn image/document access
-	mediaStore, err := media.NewStore(filepath.Join(workspace, ".media"))
+	mediaStore, mediaProvider, err := media.NewStorage(&appCfg.Media, filepath.Join(workspace, ".media"))
 	if err != nil {
 		slog.Warn("media store creation failed, images will not persist across turns", "error", err)
+	} else {
+		slog.Info("media storage initialized", "provider", mediaProvider)
 	}
 
 	// Wire media cleanup on session delete.

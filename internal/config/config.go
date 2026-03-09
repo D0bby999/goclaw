@@ -52,6 +52,7 @@ type Config struct {
 	Telemetry TelemetryConfig `json:"telemetry,omitempty"`
 	Tailscale TailscaleConfig `json:"tailscale,omitempty"`
 	Social    SocialConfig    `json:"social,omitempty"`
+	Media     MediaConfig     `json:"media,omitempty"`
 	Bindings  []AgentBinding  `json:"bindings,omitempty"`
 	mu            sync.RWMutex
 }
@@ -361,6 +362,36 @@ type AgentSpec struct {
 	Identity          *IdentityConfig `json:"identity,omitempty"`
 }
 
+// MediaConfig configures the media storage backend.
+type MediaConfig struct {
+	S3 *MediaS3Config `json:"s3,omitempty"`
+	R2 *MediaR2Config `json:"r2,omitempty"`
+}
+
+// MediaS3Config configures AWS S3 storage.
+type MediaS3Config struct {
+	Bucket         string `json:"bucket,omitempty"`
+	Region         string `json:"region,omitempty"`
+	Endpoint       string `json:"endpoint,omitempty"`
+	Prefix         string `json:"prefix,omitempty"`
+	PublicURL      string `json:"public_url,omitempty"`
+	URLExpiry      string `json:"url_expiry,omitempty"`       // Go duration string
+	ForcePathStyle bool   `json:"force_path_style,omitempty"`
+	AccessKeyID    string `json:"-"` // env only
+	SecretAccessKey string `json:"-"` // env only
+}
+
+// MediaR2Config configures Cloudflare R2 storage.
+type MediaR2Config struct {
+	Bucket         string `json:"bucket,omitempty"`
+	AccountID      string `json:"account_id,omitempty"`
+	Prefix         string `json:"prefix,omitempty"`
+	PublicURL      string `json:"public_url,omitempty"`
+	URLExpiry      string `json:"url_expiry,omitempty"`
+	AccessKeyID    string `json:"-"` // env only
+	SecretAccessKey string `json:"-"` // env only
+}
+
 // ReplaceFrom copies all data fields from src into c, preserving c's mutex.
 func (c *Config) ReplaceFrom(src *Config) {
 	c.mu.Lock()
@@ -377,6 +408,7 @@ func (c *Config) ReplaceFrom(src *Config) {
 	c.Telemetry = src.Telemetry
 	c.Tailscale = src.Tailscale
 	c.Social = src.Social
+	c.Media = src.Media
 	c.Bindings = src.Bindings
 }
 

@@ -12,12 +12,12 @@ import (
 
 // MediaServeHandler serves persisted media files by ID.
 type MediaServeHandler struct {
-	store *media.Store
+	store media.Storage
 	token string
 }
 
 // NewMediaServeHandler creates a media serve handler.
-func NewMediaServeHandler(store *media.Store, token string) *MediaServeHandler {
+func NewMediaServeHandler(store media.Storage, token string) *MediaServeHandler {
 	return &MediaServeHandler{store: store, token: token}
 }
 
@@ -49,6 +49,13 @@ func (h *MediaServeHandler) handleServe(w http.ResponseWriter, r *http.Request) 
 		return
 	}
 
+	// Cloud storage: redirect to presigned/public URL.
+	if url := h.store.PublicURL(id); url != "" {
+		http.Redirect(w, r, url, http.StatusFound)
+		return
+	}
+
+	// Local storage: serve file directly.
 	filePath, err := h.store.LoadPath(id)
 	if err != nil {
 		slog.Debug("media serve: not found", "id", id, "error", err)

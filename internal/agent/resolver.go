@@ -75,7 +75,7 @@ type ResolverDeps struct {
 	GroupWriterCache *store.GroupWriterCache
 
 	// Persistent media storage for cross-turn image/document access
-	MediaStore *media.Store
+	MediaStore media.Storage
 }
 
 // NewManagedResolver creates a ResolverFunc that builds Loops from DB agent data.

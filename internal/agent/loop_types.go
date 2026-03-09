@@ -108,7 +108,7 @@ type Loop struct {
 	teamStore store.TeamStore
 
 	// Persistent media storage for cross-turn image/document access
-	mediaStore *media.Store
+	mediaStore media.Storage
 }
 
 // AgentEvent is emitted during agent execution for WS broadcasting.
@@ -198,7 +198,7 @@ type LoopConfig struct {
 	TeamStore store.TeamStore
 
 	// Persistent media storage for cross-turn image/document access
-	MediaStore *media.Store
+	MediaStore media.Storage
 }
 
 func NewLoop(cfg LoopConfig) *Loop {
