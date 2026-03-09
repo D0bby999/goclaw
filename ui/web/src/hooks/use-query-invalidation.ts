@@ -53,8 +53,18 @@ export function useWsQueryInvalidation() {
     [queryClient],
   );
 
+  // Notification events → refresh notification list + unread count
+  const handleNotificationEvent = useCallback(
+    () => {
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.all });
+      queryClient.invalidateQueries({ queryKey: queryKeys.notifications.unread });
+    },
+    [queryClient],
+  );
+
   useWsEvent(Events.AGENT, handleAgentEvent);
   useWsEvent(Events.TRACE_UPDATED, handleTraceUpdated);
   useWsEvent(Events.CRON, handleCronEvent);
   useWsEvent(Events.HEALTH, handleHealthEvent);
+  useWsEvent(Events.NOTIFICATION, handleNotificationEvent);
 }

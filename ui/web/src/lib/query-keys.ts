@@ -71,6 +71,13 @@ export const queryKeys = {
     posts: (params: Record<string, unknown>) => ["social", "posts", params] as const,
     post: (id: string) => ["social", "post", id] as const,
     platforms: ["social", "platforms"] as const,
+    schedules: ["social", "schedules"] as const,
+    schedule: (id: string) => ["social", "schedules", id] as const,
+    scheduleLogs: (id: string) => ["social", "schedules", id, "logs"] as const,
+  },
+  notifications: {
+    all: ["notifications"] as const,
+    unread: ["notifications", "unread"] as const,
   },
   cc: {
     projects: ["cc", "projects"] as const,

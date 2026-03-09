@@ -4,6 +4,7 @@ import { HttpClient } from "@/api/http-client";
 import { WsContext } from "@/hooks/use-ws";
 import { useAuthStore } from "@/stores/use-auth-store";
 import { useWsQueryInvalidation } from "@/hooks/use-query-invalidation";
+import { useNotificationToasts } from "@/hooks/use-notification-toasts";
 import { useWsEvent } from "@/hooks/use-ws-event";
 import { TEAM_RELATED_EVENTS } from "@/api/protocol";
 import { useTeamEventStore } from "@/stores/use-team-event-store";
@@ -62,6 +63,7 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
   return (
     <WsContext.Provider value={value}>
       <WsQueryInvalidation />
+      <WsNotificationToasts />
       <WsTeamEventCapture />
       {children}
     </WsContext.Provider>
@@ -70,6 +72,11 @@ export function WsProvider({ children }: { children: React.ReactNode }) {
 
 function WsQueryInvalidation() {
   useWsQueryInvalidation();
+  return null;
+}
+
+function WsNotificationToasts() {
+  useNotificationToasts();
   return null;
 }
 

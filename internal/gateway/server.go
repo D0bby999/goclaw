@@ -47,10 +47,13 @@ type Server struct {
 	projectsHandler         *httpapi.ProjectsHandler         // projects orchestration API
 	oauthHandler            *httpapi.OAuthHandler            // OAuth endpoints
 	newsHandler             *httpapi.NewsHandler             // news digest API
+	analyticsHandler        *httpapi.AnalyticsHandler        // analytics API
 	socialHandler           *httpapi.SocialHandler           // social management API
 	filesHandler            *httpapi.FilesHandler            // workspace file serving
 	socialOAuthHandler      *httpapi.SocialOAuthHandler      // social OAuth flow API
-	socialPagesHandler     *httpapi.SocialPagesHandler      // social pages management API
+	notificationHandler    *httpapi.NotificationHandler      // notification API
+	socialPagesHandler          *httpapi.SocialPagesHandler          // social pages management API
+	contentScheduleHandler      *httpapi.ContentScheduleHandler      // content schedule API
 	storageHandler          *httpapi.StorageHandler          // storage file management
 	mediaUploadHandler      *httpapi.MediaUploadHandler      // media upload endpoint
 	mediaServeHandler       *httpapi.MediaServeHandler       // media serve endpoint
@@ -239,6 +242,16 @@ func (s *Server) BuildMux() *http.ServeMux {
 		s.newsHandler.RegisterRoutes(mux)
 	}
 
+	// Notifications API
+	if s.notificationHandler != nil {
+		s.notificationHandler.RegisterRoutes(mux)
+	}
+
+	// Analytics API
+	if s.analyticsHandler != nil {
+		s.analyticsHandler.RegisterRoutes(mux)
+	}
+
 	// Social management API
 	if s.socialHandler != nil {
 		s.socialHandler.RegisterRoutes(mux)
@@ -248,6 +261,9 @@ func (s *Server) BuildMux() *http.ServeMux {
 	}
 	if s.socialPagesHandler != nil {
 		s.socialPagesHandler.RegisterRoutes(mux)
+	}
+	if s.contentScheduleHandler != nil {
+		s.contentScheduleHandler.RegisterRoutes(mux)
 	}
 
 	// MCP bridge: expose GoClaw tools to Claude CLI via streamable-http.
@@ -391,14 +407,19 @@ func (s *Server) SetProjectsHandler(h *httpapi.ProjectsHandler) { s.projectsHand
 // SetOAuthHandler sets the OAuth handler (available in all modes).
 func (s *Server) SetOAuthHandler(h *httpapi.OAuthHandler) { s.oauthHandler = h }
 
-func (s *Server) SetNewsHandler(h *httpapi.NewsHandler)     { s.newsHandler = h }
-func (s *Server) SetSocialHandler(h *httpapi.SocialHandler) { s.socialHandler = h }
+func (s *Server) SetNewsHandler(h *httpapi.NewsHandler)         { s.newsHandler = h }
+func (s *Server) SetAnalyticsHandler(h *httpapi.AnalyticsHandler) { s.analyticsHandler = h }
+func (s *Server) SetNotificationHandler(h *httpapi.NotificationHandler) { s.notificationHandler = h }
+func (s *Server) SetSocialHandler(h *httpapi.SocialHandler)             { s.socialHandler = h }
 
 // SetFilesHandler sets the workspace file serving handler.
 func (s *Server) SetFilesHandler(h *httpapi.FilesHandler) { s.filesHandler = h }
 
 func (s *Server) SetSocialOAuthHandler(h *httpapi.SocialOAuthHandler) { s.socialOAuthHandler = h }
 func (s *Server) SetSocialPagesHandler(h *httpapi.SocialPagesHandler) { s.socialPagesHandler = h }
+func (s *Server) SetContentScheduleHandler(h *httpapi.ContentScheduleHandler) {
+	s.contentScheduleHandler = h
+}
 
 // SetStorageHandler sets the storage file management handler.
 func (s *Server) SetStorageHandler(h *httpapi.StorageHandler) { s.storageHandler = h }

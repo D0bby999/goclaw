@@ -120,6 +120,12 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 		{Name: "team_message", DisplayName: "Team Message", Description: "Send messages between team agents", Category: "teams", Enabled: true,
 			Requires: []string{"managed_mode", "teams"},
 		},
+
+		// analytics
+		{Name: "analytics", DisplayName: "Analytics", Description: "Query usage analytics and generate reports", Category: "analytics", Enabled: true},
+
+		// notifications
+		{Name: "notification", DisplayName: "Notification", Description: "Send, list, and dismiss user notifications", Category: "notifications", Enabled: true},
 	}
 }
 

@@ -171,6 +171,12 @@ export const Methods = {
   SOCIAL_MEDIA_ADD: "social.posts.media.add",
   SOCIAL_MEDIA_REMOVE: "social.posts.media.remove",
 
+  // Notifications
+  NOTIFICATIONS_LIST: "notifications.list",
+  NOTIFICATIONS_UNREAD: "notifications.unread_count",
+  NOTIFICATIONS_MARK_READ: "notifications.mark_read",
+  NOTIFICATIONS_MARK_ALL_READ: "notifications.mark_all_read",
+
   // Phase 3+ - NICE TO HAVE
   LOGS_TAIL: "logs.tail",
   HEARTBEAT: "heartbeat",
@@ -249,6 +255,9 @@ export const Events = {
 
   // Trace lifecycle
   TRACE_UPDATED: "trace.updated",
+
+  // Notifications
+  NOTIFICATION: "notification",
 } as const;
 
 /** All event names relevant to team debug view */
