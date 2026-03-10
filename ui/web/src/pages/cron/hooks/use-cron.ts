@@ -125,11 +125,16 @@ export function useCron() {
   const runJob = useCallback(
     async (jobId: string) => {
       try {
-        await ws.call(Methods.CRON_RUN, { jobId, mode: "force" }, 600_000);
+        await ws.call(Methods.CRON_RUN, { jobId, mode: "force" });
         toast.success("Cron job triggered");
       } catch (err) {
-        toast.error("Failed to run cron job", err instanceof Error ? err.message : "Unknown error");
-        throw err;
+        const msg = err instanceof Error ? err.message : "Unknown error";
+        if (msg.includes("Connection closed") || msg.includes("connection")) {
+          toast.success("Cron job triggered", "Job is running in background");
+        } else {
+          toast.error("Failed to run cron job", msg);
+          throw err;
+        }
       }
     },
     [ws],
