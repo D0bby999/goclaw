@@ -126,6 +126,19 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 
 		// notifications
 		{Name: "notification", DisplayName: "Notification", Description: "Send, list, and dismiss user notifications", Category: "notifications", Enabled: true},
+
+		// news
+		{Name: "news", DisplayName: "News", Description: "Save, query, and manage news items with deduplication and category filtering", Category: "news", Enabled: true},
+
+		// projects
+		{Name: "projects_list", DisplayName: "List Projects", Description: "List accessible projects", Category: "projects", Enabled: true},
+		{Name: "project_session_start", DisplayName: "Start Project Session", Description: "Start a new or resume existing Claude Code session in a project", Category: "projects", Enabled: true},
+		{Name: "project_session_status", DisplayName: "Project Session Status", Description: "Check status, tokens, and cost of a project session", Category: "projects", Enabled: true},
+		{Name: "project_sessions_list", DisplayName: "List Project Sessions", Description: "List sessions for a project with optional status filter", Category: "projects", Enabled: true},
+		{Name: "project_session_stop", DisplayName: "Stop Project Session", Description: "Stop a running project session", Category: "projects", Enabled: true},
+
+		// telegram
+		{Name: "create_forum_topic", DisplayName: "Create Forum Topic", Description: "Create a topic in a Telegram forum/supergroup", Category: "messaging", Enabled: true},
 	}
 }
 
