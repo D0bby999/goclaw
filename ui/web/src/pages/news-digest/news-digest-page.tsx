@@ -22,7 +22,8 @@ export function NewsDigestPage() {
   const { agents } = useAgents();
 
   const [agentId, setAgentId] = useState<string>("");
-  const selectedAgentId = agentId || agents[0]?.id || "";
+  const defaultAgent = agents.find((a) => a.is_default) ?? agents[0];
+  const selectedAgentId = agentId || defaultAgent?.id || "";
 
   const { sources, loading: sourcesLoading, refresh: refreshSources, createSource, updateSource, deleteSource } = useNewsSources(selectedAgentId);
   const { items, count, loading: itemsLoading, refresh: refreshItems } = useNewsItems(selectedAgentId);
