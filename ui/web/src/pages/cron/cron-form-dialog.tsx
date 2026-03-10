@@ -154,7 +154,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
     );
   };
 
-  const devices = pairedDevices.filter((d) => d.chat_id);
+  const devices = pairedDevices.filter((d) => d.chat_id != null && d.chat_id !== "");
   const isEdit = !!editJob;
 
   return (
@@ -270,8 +270,9 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
                   <div className="space-y-1.5 max-h-40 overflow-y-auto rounded-md border p-2">
                     {devices.map((d) => {
                       const key = `${d.channel}::${d.chat_id}`;
-                      const label = d.chat_id.startsWith("-")
-                        ? `Group ${d.chat_id}`
+                      const chatId = String(d.chat_id ?? "");
+                      const label = chatId.startsWith("-")
+                        ? `Group ${chatId}`
                         : `User ${d.sender_id}`;
                       return (
                         <label key={key} className="flex items-center gap-2 cursor-pointer text-sm hover:bg-muted/50 rounded px-1 py-0.5">

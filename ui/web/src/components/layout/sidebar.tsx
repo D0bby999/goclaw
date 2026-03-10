@@ -25,6 +25,7 @@ import {
   HardDrive,
   Inbox,
   Brain,
+  BookOpen,
 } from "lucide-react";
 import { SidebarGroup } from "./sidebar-group";
 import { SidebarItem } from "./sidebar-item";
@@ -88,6 +89,7 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
           <SidebarItem to={ROUTES.BUILTIN_TOOLS} icon={Package} label="Built-in Tools" collapsed={collapsed} />
           <SidebarItem to={ROUTES.MCP} icon={Plug} label="MCP Servers" collapsed={collapsed} />
           <SidebarItem to={ROUTES.MEMORY} icon={Brain} label="Memory" collapsed={collapsed} />
+          <SidebarItem to={ROUTES.KNOWLEDGE_BASE} icon={BookOpen} label="Knowledge Base" collapsed={collapsed} />
         </SidebarGroup>
 
         <SidebarGroup label="Monitoring" collapsed={collapsed}>

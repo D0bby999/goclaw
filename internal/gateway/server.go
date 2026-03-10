@@ -61,6 +61,7 @@ type Server struct {
 	storageHandler          *httpapi.StorageHandler          // storage file management
 	mediaUploadHandler      *httpapi.MediaUploadHandler      // media upload endpoint
 	mediaServeHandler       *httpapi.MediaServeHandler       // media serve endpoint
+	kbHandler               *httpapi.KBHandler               // knowledge base API
 	agentStore         store.AgentStore             // for context injection in tools_invoke
 	msgBus             *bus.MessageBus              // for MCP bridge media delivery
 
@@ -225,6 +226,11 @@ func (s *Server) BuildMux() *http.ServeMux {
 	// Memory management API
 	if s.memoryHandler != nil {
 		s.memoryHandler.RegisterRoutes(mux)
+	}
+
+	// Knowledge Base API
+	if s.kbHandler != nil {
+		s.kbHandler.RegisterRoutes(mux)
 	}
 
 	// Workspace file serving (available in all modes)
@@ -504,6 +510,9 @@ func (s *Server) SetMediaServeHandler(h *httpapi.MediaServeHandler) { s.mediaSer
 
 // SetMemoryHandler sets the memory management handler.
 func (s *Server) SetMemoryHandler(h *httpapi.MemoryHandler) { s.memoryHandler = h }
+
+// SetKBHandler sets the knowledge base handler.
+func (s *Server) SetKBHandler(h *httpapi.KBHandler) { s.kbHandler = h }
 
 // SetAgentStore sets the agent store for context injection in tools_invoke.
 func (s *Server) SetAgentStore(as store.AgentStore) { s.agentStore = as }

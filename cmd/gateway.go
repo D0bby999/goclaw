@@ -18,6 +18,7 @@ import (
 	ccpkg "github.com/nextlevelbuilder/goclaw/internal/claudecode"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
+	"github.com/nextlevelbuilder/goclaw/internal/kb"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/discord"
 	"github.com/nextlevelbuilder/goclaw/internal/channels/feishu"
 	slackchannel "github.com/nextlevelbuilder/goclaw/internal/channels/slack"
@@ -516,6 +517,12 @@ func runGateway() {
 	toolsReg.Register(tools.NewNewsTool(pgStores.News))
 	slog.Info("news tool registered")
 
+	// Knowledge base search tool
+	if pgStores.KB != nil {
+		toolsReg.Register(tools.NewKBSearchTool(pgStores.KB))
+		slog.Info("kb_search tool registered")
+	}
+
 	// Analytics tool
 	toolsReg.Register(tools.NewAnalyticsTool(pgStores.Analytics))
 	slog.Info("analytics tool registered")
@@ -669,6 +676,18 @@ func runGateway() {
 		server.SetMemoryHandler(httpapi.NewMemoryHandler(pgStores.Memory, cfg.Gateway.Token))
 	}
 
+	// Knowledge Base API (RAG: upload, process, search)
+	var kbProc *kb.Processor
+	if pgStores != nil && pgStores.KB != nil && mediaStore != nil {
+		memCfg := cfg.Agents.Defaults.Memory
+		var kbEmbProvider store.EmbeddingProvider
+		if ep := resolveEmbeddingProvider(cfg, memCfg); ep != nil {
+			kbEmbProvider = ep
+		}
+		kbProc = kb.NewProcessor(pgStores.KB, mediaStore, kbEmbProvider)
+		server.SetKBHandler(httpapi.NewKBHandler(pgStores.KB, kbProc, mediaStore, cfg.Gateway.Token))
+	}
+
 	// Workspace file serving endpoint — serves files by absolute path, auth-token protected.
 	// Supports media from any agent workspace (each agent has its own workspace from DB).
 	server.SetFilesHandler(httpapi.NewFilesHandler(cfg.Gateway.Token))
@@ -806,6 +825,12 @@ func runGateway() {
 	// Register all RPC methods
 	server.SetLogTee(logTee)
 	pairingMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee, browserMgr, scraperCookieStore, pgStores.News, pgStores.Notifications)
+
+	// Knowledge Base RPC methods
+	if pgStores.KB != nil && kbProc != nil {
+		methods.NewKBMethods(pgStores.KB, kbProc).Register(server.Router())
+		slog.Info("kb RPC methods registered")
+	}
 
 	// News HTTP API
 	newsHandler := httpapi.NewNewsHandler(pgStores.News, cfg.Gateway.Token)

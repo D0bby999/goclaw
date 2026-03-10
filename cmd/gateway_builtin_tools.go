@@ -127,6 +127,9 @@ func builtinToolSeedData() []store.BuiltinToolDef {
 		// notifications
 		{Name: "notification", DisplayName: "Notification", Description: "Send, list, and dismiss user notifications", Category: "notifications", Enabled: true},
 
+		// knowledge base
+		{Name: "kb_search", DisplayName: "KB Search", Description: "Search the knowledge base for relevant documentation and reference material", Category: "knowledge", Enabled: true},
+
 		// news
 		{Name: "news", DisplayName: "News", Description: "Save, query, and manage news items with deduplication and category filtering", Category: "news", Enabled: true},
 

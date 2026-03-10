@@ -142,6 +142,7 @@ var tablesWithUpdatedAt = map[string]bool{
 	"user_agent_overrides": true, "config_secrets": true,
 	"memory_documents": true, "memory_chunks": true, "embedding_cache": true,
 	"content_schedules": true,
+	"kb_collections": true, "kb_documents": true, "kb_chunks": true,
 }
 
 func tableHasUpdatedAt(table string) bool {

@@ -141,6 +141,17 @@ export const Methods = {
   DELEGATIONS_LIST: "delegations.list",
   DELEGATIONS_GET: "delegations.get",
 
+  // Knowledge Base
+  KB_COLLECTIONS_LIST: "kb.collections.list",
+  KB_COLLECTIONS_CREATE: "kb.collections.create",
+  KB_COLLECTIONS_UPDATE: "kb.collections.update",
+  KB_COLLECTIONS_DELETE: "kb.collections.delete",
+  KB_DOCUMENTS_LIST: "kb.documents.list",
+  KB_DOCUMENTS_GET: "kb.documents.get",
+  KB_DOCUMENTS_DELETE: "kb.documents.delete",
+  KB_DOCUMENTS_REPROCESS: "kb.documents.reprocess",
+  KB_SEARCH: "kb.search",
+
   // Scraper cookies
   SCRAPER_COOKIES_LIST: "scraper.cookies.list",
   SCRAPER_COOKIES_SET: "scraper.cookies.set",

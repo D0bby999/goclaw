@@ -90,4 +90,10 @@ export const queryKeys = {
     all: ["memory"] as const,
     list: (params: Record<string, unknown>) => ["memory", params] as const,
   },
+  kb: {
+    all: ["kb"] as const,
+    collections: (agentId: string) => ["kb", "collections", agentId] as const,
+    documents: (collectionId: string) => ["kb", "documents", collectionId] as const,
+    document: (documentId: string) => ["kb", "document", documentId] as const,
+  },
 };

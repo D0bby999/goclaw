@@ -194,6 +194,19 @@ const (
 	MethodSchedulesLogs   = "schedules.logs"
 )
 
+// Knowledge Base
+const (
+	MethodKBCollectionsList   = "kb.collections.list"
+	MethodKBCollectionsCreate = "kb.collections.create"
+	MethodKBCollectionsUpdate = "kb.collections.update"
+	MethodKBCollectionsDelete = "kb.collections.delete"
+	MethodKBDocumentsList     = "kb.documents.list"
+	MethodKBDocumentsGet      = "kb.documents.get"
+	MethodKBDocumentsDelete   = "kb.documents.delete"
+	MethodKBDocumentsReprocess = "kb.documents.reprocess"
+	MethodKBSearch            = "kb.search"
+)
+
 // Phase 3+ - NICE TO HAVE methods
 const (
 	MethodLogsTail = "logs.tail"

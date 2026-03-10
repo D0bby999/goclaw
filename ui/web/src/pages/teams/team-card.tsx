@@ -11,9 +11,11 @@ interface TeamCardProps {
 
 export function TeamCard({ team, onClick, onDelete }: TeamCardProps) {
   return (
-    <button
-      type="button"
+    <div
+      role="button"
+      tabIndex={0}
       onClick={onClick}
+      onKeyDown={(e) => { if (e.key === "Enter" || e.key === " ") onClick(); }}
       className="flex cursor-pointer flex-col gap-3 rounded-lg border bg-card p-4 text-left transition-all hover:border-primary/30 hover:shadow-md"
     >
       {/* Top row: icon + name + status */}
@@ -58,6 +60,6 @@ export function TeamCard({ team, onClick, onDelete }: TeamCardProps) {
           </Button>
         )}
       </div>
-    </button>
+    </div>
   );
 }

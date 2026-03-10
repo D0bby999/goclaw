@@ -40,6 +40,7 @@ export const ROUTES = {
   STORAGE: "/storage",
   PENDING_MESSAGES: "/pending-messages",
   MEMORY: "/memory",
+  KNOWLEDGE_BASE: "/knowledge-base",
   SETUP: "/setup",
 } as const;
 

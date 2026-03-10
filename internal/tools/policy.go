@@ -10,6 +10,7 @@ import (
 
 // Tool groups map group names to tool names.
 var toolGroups = map[string][]string{
+	"kb":         {"kb_search"},
 	"memory":     {"memory_search", "memory_get"},
 	"web":        {"web_search", "web_fetch", "scraper"},
 	"fs":         {"read_file", "write_file", "list_files", "edit"},
@@ -36,6 +37,7 @@ var toolGroups = map[string][]string{
 		"team_tasks", "team_message",
 		"analytics",
 		"notification",
+		"kb_search",
 	},
 }
 
@@ -53,7 +55,7 @@ func UnregisterToolGroup(name string) {
 // Tool profiles define preset allow sets.
 var toolProfiles = map[string][]string{
 	"minimal":   {"session_status"},
-	"coding":    {"group:fs", "group:runtime", "group:sessions", "group:memory", "group:web", "read_image", "create_image", "skill_search"},
+	"coding":    {"group:fs", "group:runtime", "group:sessions", "group:memory", "group:kb", "group:web", "read_image", "create_image", "skill_search"},
 	"messaging": {"group:messaging", "group:web", "sessions_list", "sessions_history", "sessions_send", "session_status", "read_image", "skill_search"},
 	"full":      {}, // empty = no restrictions
 }
@@ -73,6 +75,7 @@ var subagentDenyList = []string{
 	"cron", "memory_search", "memory_get", "sessions_send",
 	"analytics",
 	"notification",
+	"kb_search",
 }
 
 // Leaf subagent deny — additional restrictions at max spawn depth.

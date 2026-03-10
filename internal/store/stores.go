@@ -27,4 +27,5 @@ type Stores struct {
 	Notifications    NotificationStore
 	ContentSchedules ContentScheduleStore
 	PendingMessages  PendingMessageStore
+	KB               KBStore
 }
