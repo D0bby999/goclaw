@@ -186,7 +186,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
               <SelectContent>
                 <SelectItem value="__default__">Default agent</SelectItem>
                 {agents.map((a) => (
-                  <SelectItem key={a.id} value={a.agent_key || a.id}>
+                  <SelectItem key={a.id} value={a.id}>
                     {a.display_name || a.agent_key || a.id}
                   </SelectItem>
                 ))}
