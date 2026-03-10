@@ -3,7 +3,6 @@ package methods
 import (
 	"context"
 	"encoding/json"
-	"log/slog"
 	"regexp"
 
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
@@ -197,17 +196,18 @@ func (m *CronMethods) handleRun(_ context.Context, client *gateway.Client, req *
 		return
 	}
 
-	// Respond immediately — job execution happens in background
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]interface{}{
-		"ok":  true,
-		"ran": true,
-	}))
+	// Run synchronously so the caller knows when the job finishes
+	ran, result, err := m.service.RunJob(jobID, force)
+	if err != nil {
+		client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, err.Error()))
+		return
+	}
 
-	go func() {
-		if _, _, err := m.service.RunJob(jobID, force); err != nil {
-			slog.Warn("cron.run background error", "jobId", jobID, "error", err)
-		}
-	}()
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]interface{}{
+		"ok":     true,
+		"ran":    ran,
+		"result": result,
+	}))
 }
 
 func (m *CronMethods) handleRuns(_ context.Context, client *gateway.Client, req *protocol.RequestFrame) {
