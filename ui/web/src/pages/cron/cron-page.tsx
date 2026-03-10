@@ -12,6 +12,7 @@ import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useCron, type CronJob, type CronRunLogEntry } from "./hooks/use-cron";
 import { CronFormDialog } from "./cron-form-dialog";
 import { CronRunLogDialog } from "./cron-run-log-dialog";
+import { useAgents } from "@/pages/agents/hooks/use-agents";
 import { CronDetailPage } from "./cron-detail-page";
 import { useMinLoading } from "@/hooks/use-min-loading";
 import { useDeferredLoading } from "@/hooks/use-deferred-loading";
@@ -34,6 +35,11 @@ export function CronPage() {
   const { id: detailId } = useParams<{ id: string }>();
   const navigate = useNavigate();
   const { jobs, loading, refreshing, refresh, createJob, updateJob, toggleJob, deleteJob, runJob, getRunLog } = useCron();
+  const { agents } = useAgents();
+  const agentNameMap = new Map(agents.flatMap((a) => [
+    [a.agent_key, a.display_name || a.agent_key],
+    [a.id, a.display_name || a.agent_key || a.id],
+  ]));
   const spinning = useMinLoading(refreshing);
   const showSkeleton = useDeferredLoading(loading && jobs.length === 0);
   const [showForm, setShowForm] = useState(false);
@@ -146,7 +152,7 @@ export function CronPage() {
                     </td>
                     <td className="px-4 py-3">
                       {job.agentId ? (
-                        <Badge variant="secondary">{job.agentId}</Badge>
+                        <Badge variant="secondary">{agentNameMap.get(job.agentId) || job.agentId}</Badge>
                       ) : (
                         <span className="text-muted-foreground">default</span>
                       )}

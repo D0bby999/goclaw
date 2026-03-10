@@ -12,12 +12,14 @@ import { Label } from "@/components/ui/label";
 import { Textarea } from "@/components/ui/textarea";
 import { Switch } from "@/components/ui/switch";
 import { Checkbox } from "@/components/ui/checkbox";
+import { Select, SelectContent, SelectItem, SelectTrigger, SelectValue } from "@/components/ui/select";
 import type { CronJob, CronSchedule } from "./hooks/use-cron";
 import { slugify, isValidSlug } from "@/lib/slug";
 import { useWs } from "@/hooks/use-ws";
 import { Methods } from "@/api/protocol";
 import { useQuery } from "@tanstack/react-query";
 import { useAuthStore } from "@/stores/use-auth-store";
+import { useAgents } from "@/pages/agents/hooks/use-agents";
 
 interface PairedDevice {
   sender_id: string;
@@ -82,6 +84,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
 
   const ws = useWs();
   const connected = useAuthStore((s) => s.connected);
+  const { agents } = useAgents();
   const { data: pairedDevices = [] } = useQuery({
     queryKey: ["paired-devices"],
     queryFn: async () => {
@@ -175,8 +178,20 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
           </div>
 
           <div className="space-y-2">
-            <Label>Agent ID (optional)</Label>
-            <Input value={agentId} onChange={(e) => setAgentId(e.target.value)} placeholder="default" />
+            <Label>Agent</Label>
+            <Select value={agentId || "__default__"} onValueChange={(v) => setAgentId(v === "__default__" ? "" : v)}>
+              <SelectTrigger>
+                <SelectValue placeholder="Select agent" />
+              </SelectTrigger>
+              <SelectContent>
+                <SelectItem value="__default__">Default agent</SelectItem>
+                {agents.map((a) => (
+                  <SelectItem key={a.id} value={a.agent_key || a.id}>
+                    {a.display_name || a.agent_key || a.id}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
           </div>
 
           <div className="space-y-2">
