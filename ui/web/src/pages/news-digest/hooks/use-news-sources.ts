@@ -4,6 +4,7 @@ import { useWs } from "@/hooks/use-ws";
 import { Methods } from "@/api/protocol";
 import { queryKeys } from "@/lib/query-keys";
 import { toast } from "@/stores/use-toast-store";
+import { useAuthStore } from "@/stores/use-auth-store";
 
 export interface NewsSource {
   id: string;
@@ -21,18 +22,18 @@ export interface NewsSource {
 export function useNewsSources(agentId: string) {
   const ws = useWs();
   const queryClient = useQueryClient();
+  const connected = useAuthStore((s) => s.connected);
 
   const { data: sources = [], isLoading: loading } = useQuery({
     queryKey: queryKeys.newsDigest.sources(agentId),
     queryFn: async () => {
-      if (!ws.isConnected || !agentId) return [];
       const res = await ws.call<{ sources: NewsSource[] }>(Methods.NEWS_SOURCES_LIST, {
         agentId,
         enabledOnly: false,
       });
       return res.sources ?? [];
     },
-    enabled: !!agentId,
+    enabled: !!agentId && connected,
   });
 
   const invalidate = useCallback(

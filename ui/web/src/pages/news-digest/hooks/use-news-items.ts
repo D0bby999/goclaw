@@ -3,6 +3,7 @@ import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useWs } from "@/hooks/use-ws";
 import { Methods } from "@/api/protocol";
 import { queryKeys } from "@/lib/query-keys";
+import { useAuthStore } from "@/stores/use-auth-store";
 
 export interface NewsItem {
   id: string;
@@ -25,11 +26,11 @@ export interface NewsItem {
 export function useNewsItems(agentId: string) {
   const ws = useWs();
   const queryClient = useQueryClient();
+  const connected = useAuthStore((s) => s.connected);
 
   const { data, isLoading: loading } = useQuery({
     queryKey: queryKeys.newsDigest.items(agentId),
     queryFn: async () => {
-      if (!ws.isConnected || !agentId) return { items: [] as NewsItem[], count: 0 };
       const res = await ws.call<{ items: NewsItem[]; count: number }>(Methods.NEWS_ITEMS_LIST, {
         agentId,
         limit: 100,
@@ -37,7 +38,7 @@ export function useNewsItems(agentId: string) {
       });
       return { items: res.items ?? [], count: res.count ?? 0 };
     },
-    enabled: !!agentId,
+    enabled: !!agentId && connected,
   });
 
   const items = data?.items ?? [];
