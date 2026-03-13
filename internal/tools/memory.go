@@ -14,6 +14,7 @@ import (
 // MemorySearchTool implements the memory_search tool for hybrid semantic + FTS search.
 type MemorySearchTool struct {
 	memStore store.MemoryStore // Postgres-backed
+	hasKG    bool              // knowledge_graph_search tool is available
 }
 
 func NewMemorySearchTool() *MemorySearchTool {
@@ -25,25 +26,30 @@ func (t *MemorySearchTool) SetMemoryStore(ms store.MemoryStore) {
 	t.memStore = ms
 }
 
+// SetHasKG enables the KG hint in search results.
+func (t *MemorySearchTool) SetHasKG(has bool) {
+	t.hasKG = has
+}
+
 func (t *MemorySearchTool) Name() string { return "memory_search" }
 
 func (t *MemorySearchTool) Description() string {
 	return "Mandatory recall step: semantically search MEMORY.md + memory/*.md before answering questions about prior work, decisions, dates, people, preferences, or todos; returns top snippets with path + lines. If response has disabled=true, memory retrieval is unavailable and should be surfaced to the user. IMPORTANT: Always query in the SAME language as the stored memory content. If the user speaks Vietnamese, search in Vietnamese. If memory was written in English, search in English. Matching the language dramatically improves search accuracy."
 }
 
-func (t *MemorySearchTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *MemorySearchTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"query": map[string]interface{}{
+		"properties": map[string]any{
+			"query": map[string]any{
 				"type":        "string",
 				"description": "Natural language search query. Must be in the same language as the stored memory content (e.g., Vietnamese if memory is in Vietnamese).",
 			},
-			"maxResults": map[string]interface{}{
+			"maxResults": map[string]any{
 				"type":        "number",
 				"description": "Maximum number of results to return (default: 6)",
 			},
-			"minScore": map[string]interface{}{
+			"minScore": map[string]any{
 				"type":        "number",
 				"description": "Minimum relevance score threshold (0-1)",
 			},
@@ -52,7 +58,7 @@ func (t *MemorySearchTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]any) *Result {
 	query, _ := args["query"].(string)
 	if query == "" {
 		return ErrorResult("query parameter is required")
@@ -72,11 +78,27 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 		return ErrorResult("memory system not available")
 	}
 
-	userID := store.UserIDFromContext(ctx)
-	results, err := t.memStore.Search(ctx, query, agentID.String(), userID, store.MemorySearchOptions{
+	userID := store.MemoryUserID(ctx)
+	searchOpts := store.MemorySearchOptions{
 		MaxResults: maxResults,
 		MinScore:   minScore,
-	})
+	}
+	// Apply per-agent memory config overrides if set
+	if mc := MemoryConfigFromCtx(ctx); mc != nil {
+		if mc.MaxResults > 0 && searchOpts.MaxResults <= 0 {
+			searchOpts.MaxResults = mc.MaxResults
+		}
+		if mc.VectorWeight > 0 {
+			searchOpts.VectorWeight = mc.VectorWeight
+		}
+		if mc.TextWeight > 0 {
+			searchOpts.TextWeight = mc.TextWeight
+		}
+		if mc.MinScore > 0 && searchOpts.MinScore <= 0 {
+			searchOpts.MinScore = mc.MinScore
+		}
+	}
+	results, err := t.memStore.Search(ctx, query, agentID.String(), userID, searchOpts)
 	if err != nil {
 		return ErrorResult(fmt.Sprintf("memory search failed: %v", err))
 	}
@@ -84,10 +106,14 @@ func (t *MemorySearchTool) Execute(ctx context.Context, args map[string]interfac
 		return NewResult("No memory results found for query: " + query)
 	}
 
-	data, _ := json.MarshalIndent(map[string]interface{}{
+	output := map[string]any{
 		"results": results,
 		"count":   len(results),
-	}, "", "  ")
+	}
+	if t.hasKG {
+		output["hint"] = "Also run knowledge_graph_search if the query involves people, teams, projects, or connections between entities."
+	}
+	data, _ := json.MarshalIndent(output, "", "  ")
 	return NewResult(string(data))
 }
 
@@ -111,19 +137,19 @@ func (t *MemoryGetTool) Description() string {
 	return "Safe snippet read from MEMORY.md or memory/*.md with optional from/lines; use after memory_search to pull only the needed lines and keep context small."
 }
 
-func (t *MemoryGetTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *MemoryGetTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
+		"properties": map[string]any{
+			"path": map[string]any{
 				"type":        "string",
 				"description": "Relative path to memory file (e.g., 'MEMORY.md' or 'memory/notes.md')",
 			},
-			"from": map[string]interface{}{
+			"from": map[string]any{
 				"type":        "number",
 				"description": "Start line number (1-indexed). Omit to read from beginning.",
 			},
-			"lines": map[string]interface{}{
+			"lines": map[string]any{
 				"type":        "number",
 				"description": "Number of lines to read. Omit to read entire file.",
 			},
@@ -132,7 +158,7 @@ func (t *MemoryGetTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]any) *Result {
 	path, _ := args["path"].(string)
 	if path == "" {
 		return ErrorResult("path parameter is required")
@@ -151,7 +177,7 @@ func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}
 		return ErrorResult("memory system not available")
 	}
 
-	userID := store.UserIDFromContext(ctx)
+	userID := store.MemoryUserID(ctx)
 
 	// Try per-user first, then global
 	content, err := t.memStore.GetDocument(ctx, agentID.String(), userID, path)
@@ -168,7 +194,7 @@ func (t *MemoryGetTool) Execute(ctx context.Context, args map[string]interface{}
 		return NewResult(fmt.Sprintf("File %s is empty or the specified range has no content.", path))
 	}
 
-	data, _ := json.MarshalIndent(map[string]interface{}{
+	data, _ := json.MarshalIndent(map[string]any{
 		"path": path,
 		"text": text,
 	}, "", "  ")

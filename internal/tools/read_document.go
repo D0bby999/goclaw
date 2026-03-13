@@ -50,6 +50,7 @@ const documentMaxBytes = 20 * 1024 * 1024
 
 // documentProviderPriority is the order in which providers are tried for document analysis.
 // Gemini has best native PDF support (50MB, 258 tokens/page).
+// "alibaba" is included as an alias for dashscope (common DB registration name).
 var documentProviderPriority = []string{"gemini", "anthropic", "openrouter", "dashscope"}
 
 // documentModelDefaults maps provider names to preferred document-capable models.
@@ -78,15 +79,15 @@ func (t *ReadDocumentTool) Description() string {
 		"Specify what you want to extract or analyze."
 }
 
-func (t *ReadDocumentTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ReadDocumentTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"prompt": map[string]interface{}{
+		"properties": map[string]any{
+			"prompt": map[string]any{
 				"type":        "string",
 				"description": "What to analyze. E.g. 'Extract all tables', 'Summarize key findings', 'What does page 3 say?'",
 			},
-			"media_id": map[string]interface{}{
+			"media_id": map[string]any{
 				"type":        "string",
 				"description": "Optional: specific media_id from <media:document> tag. If omitted, uses most recent document.",
 			},
@@ -95,7 +96,7 @@ func (t *ReadDocumentTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ReadDocumentTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+func (t *ReadDocumentTool) Execute(ctx context.Context, args map[string]any) *Result {
 	prompt, _ := args["prompt"].(string)
 	if prompt == "" {
 		prompt = "Analyze this document and describe its contents."

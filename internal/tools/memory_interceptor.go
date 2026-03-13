@@ -13,6 +13,17 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
+// effectiveWorkspace returns the per-user workspace from ctx if available,
+// falling back to the interceptor's base workspace.
+// This ensures memory path detection and normalization work correctly
+// for per-user workspaces (e.g. workspace/channel/userID/).
+func effectiveWorkspace(ctx context.Context, baseWorkspace string) string {
+	if ws := ToolWorkspaceFromCtx(ctx); ws != "" {
+		return ws
+	}
+	return baseWorkspace
+}
+
 // isMemoryDir checks if a path refers to the memory directory itself.
 // Handles "memory", "./memory", "/workspace/memory" etc.
 func isMemoryDir(path, workspace string) bool {
@@ -59,11 +70,16 @@ func isMemoryPath(path, workspace string) bool {
 	return false
 }
 
+// KGExtractFunc is a callback invoked after a memory write to extract KG entities.
+// agentID, userID, content are passed from the write context.
+type KGExtractFunc func(ctx context.Context, agentID, userID, content string)
+
 // MemoryInterceptor routes memory file reads/writes to the MemoryStore.
 // Keeps MEMORY.md and memory/* in Postgres.
 type MemoryInterceptor struct {
-	memStore  store.MemoryStore
-	workspace string
+	memStore    store.MemoryStore
+	workspace   string
+	kgExtractFn KGExtractFunc
 }
 
 // NewMemoryInterceptor creates an interceptor backed by the given memory store.
@@ -71,10 +87,16 @@ func NewMemoryInterceptor(ms store.MemoryStore, workspace string) *MemoryInterce
 	return &MemoryInterceptor{memStore: ms, workspace: workspace}
 }
 
+// SetKGExtractFunc sets the callback for KG extraction after memory writes.
+func (m *MemoryInterceptor) SetKGExtractFunc(fn KGExtractFunc) {
+	m.kgExtractFn = fn
+}
+
 // ReadFile attempts to read a memory file from the DB.
 // Returns (content, true, nil) if handled, or ("", false, nil) if not a memory path.
 func (m *MemoryInterceptor) ReadFile(ctx context.Context, path string) (string, bool, error) {
-	if !isMemoryPath(path, m.workspace) {
+	ws := effectiveWorkspace(ctx, m.workspace)
+	if !isMemoryPath(path, ws) {
 		return "", false, nil
 	}
 
@@ -84,9 +106,9 @@ func (m *MemoryInterceptor) ReadFile(ctx context.Context, path string) (string, 
 	}
 
 	// Normalize absolute path to workspace-relative for DB storage
-	relPath := normalizeToRelative(path, m.workspace)
+	relPath := normalizeToRelative(path, ws)
 
-	userID := store.UserIDFromContext(ctx)
+	userID := store.MemoryUserID(ctx)
 	agentStr := agentID.String()
 
 	// Try per-user first, then global
@@ -103,29 +125,36 @@ func (m *MemoryInterceptor) ReadFile(ctx context.Context, path string) (string, 
 	return content, true, nil
 }
 
+// MemoryWriteResult holds the outcome of a memory write operation.
+type MemoryWriteResult struct {
+	Handled     bool
+	KGTriggered bool
+}
+
 // WriteFile attempts to write a memory file to the DB (+ re-index chunks for .md files).
 // Non-.md files are stored but NOT indexed/chunked/embedded,
 // matching TS behavior where only .md files are indexed.
-// Returns (true, nil) if handled, or (false, nil) if not a memory path.
-func (m *MemoryInterceptor) WriteFile(ctx context.Context, path, content string) (bool, error) {
-	if !isMemoryPath(path, m.workspace) {
-		return false, nil
+// Returns MemoryWriteResult with Handled=true if this was a memory path, KGTriggered=true if KG extraction was started.
+func (m *MemoryInterceptor) WriteFile(ctx context.Context, path, content string) (MemoryWriteResult, error) {
+	ws := effectiveWorkspace(ctx, m.workspace)
+	if !isMemoryPath(path, ws) {
+		return MemoryWriteResult{}, nil
 	}
 
 	agentID := store.AgentIDFromContext(ctx)
 	if agentID == uuid.Nil {
-		return false, nil // no agent context
+		return MemoryWriteResult{}, nil // no agent context
 	}
 
 	// Normalize absolute path to workspace-relative for DB storage
-	relPath := normalizeToRelative(path, m.workspace)
+	relPath := normalizeToRelative(path, ws)
 
-	userID := store.UserIDFromContext(ctx)
+	userID := store.MemoryUserID(ctx)
 	agentStr := agentID.String()
 
 	// Write document to DB
 	if err := m.memStore.PutDocument(ctx, agentStr, userID, relPath, content); err != nil {
-		return true, err
+		return MemoryWriteResult{Handled: true}, err
 	}
 
 	// Only index .md files (chunk + embed). Non-.md files (JSON, etc.) are stored
@@ -137,13 +166,21 @@ func (m *MemoryInterceptor) WriteFile(ctx context.Context, path, content string)
 		}
 	}
 
-	return true, nil
+	// Trigger KG extraction in background if configured
+	kgTriggered := false
+	if m.kgExtractFn != nil && content != "" {
+		go m.kgExtractFn(context.WithoutCancel(ctx), agentStr, userID, content)
+		kgTriggered = true
+	}
+
+	return MemoryWriteResult{Handled: true, KGTriggered: kgTriggered}, nil
 }
 
 // ListFiles lists memory documents from the DB when path is the memory directory.
 // Returns (listing, true, nil) if handled, or ("", false, nil) if not a memory path.
 func (m *MemoryInterceptor) ListFiles(ctx context.Context, path string) (string, bool, error) {
-	if !isMemoryDir(path, m.workspace) {
+	ws := effectiveWorkspace(ctx, m.workspace)
+	if !isMemoryDir(path, ws) {
 		return "", false, nil
 	}
 
@@ -152,7 +189,7 @@ func (m *MemoryInterceptor) ListFiles(ctx context.Context, path string) (string,
 		return "", false, nil
 	}
 
-	userID := store.UserIDFromContext(ctx)
+	userID := store.MemoryUserID(ctx)
 	docs, err := m.memStore.ListDocuments(ctx, agentID.String(), userID)
 	if err != nil {
 		return "", true, err

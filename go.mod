@@ -1,6 +1,6 @@
 module github.com/nextlevelbuilder/goclaw
 
-go 1.25.5
+go 1.26.0
 
 require (
 	github.com/PuerkitoBio/goquery v1.11.0
@@ -17,6 +17,7 @@ require (
 	github.com/mattn/go-runewidth v0.0.16
 	github.com/mymmrac/telego v1.6.0
 	github.com/redis/go-redis/v9 v9.18.0
+	github.com/slack-go/slack v0.19.0
 	github.com/spf13/cobra v1.10.2
 	github.com/tidwall/gjson v1.18.0
 	github.com/titanous/json5 v1.0.0
@@ -95,7 +96,6 @@ require (
 	github.com/pires/go-proxyproto v0.8.1 // indirect
 	github.com/prometheus-community/pro-bing v0.4.0 // indirect
 	github.com/safchain/ethtool v0.3.0 // indirect
-	github.com/slack-go/slack v0.19.0 // indirect
 	github.com/spf13/cast v1.7.1 // indirect
 	github.com/tailscale/certstore v0.1.1-0.20231202035212-d3fa0460f47e // indirect
 	github.com/tailscale/go-winio v0.0.0-20231025203758-c4f33415bf55 // indirect

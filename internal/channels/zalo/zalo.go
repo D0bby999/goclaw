@@ -13,6 +13,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"os"
 	"strings"
 	"sync"
 	"time"
@@ -35,14 +36,14 @@ const (
 // Channel connects to the Zalo OA Bot API.
 type Channel struct {
 	*channels.BaseChannel
-	token          string
-	dmPolicy       string
-	mediaMaxMB     int
-	blockReply     *bool
-	pairingService store.PairingStore
+	token           string
+	dmPolicy        string
+	mediaMaxMB      int
+	blockReply      *bool
+	pairingService  store.PairingStore
 	pairingDebounce sync.Map // senderID → time.Time
-	stopCh         chan struct{}
-	client         *http.Client
+	stopCh          chan struct{}
+	client          *http.Client
 }
 
 // New creates a new Zalo channel.
@@ -231,14 +232,32 @@ func (c *Channel) handleImageMessage(msg *zaloMessage) {
 		content = "[image]"
 	}
 
+	// Download photo from Zalo CDN to local temp file (CDN URLs are auth-restricted/expiring)
 	var media []string
-	if msg.Photo != "" {
-		media = []string{msg.Photo}
+	var photoURL string
+	switch {
+	case msg.PhotoURL != "":
+		photoURL = msg.PhotoURL
+	case msg.Photo != "":
+		photoURL = msg.Photo
 	}
 
-	slog.Debug("zalo image message received",
+	if photoURL != "" {
+		localPath, err := c.downloadMedia(photoURL)
+		if err != nil {
+			slog.Warn("zalo photo download failed, passing URL as fallback",
+				"photo_url", photoURL, "error", err)
+			media = []string{photoURL}
+		} else {
+			media = []string{localPath}
+		}
+	}
+
+	slog.Info("zalo image message received",
 		"sender_id", senderID,
 		"chat_id", chatID,
+		"photo_url", photoURL,
+		"has_media", len(media) > 0,
 	)
 
 	metadata := map[string]string{
@@ -316,6 +335,55 @@ func (c *Channel) sendPairingReply(senderID, chatID string) {
 	}
 }
 
+// --- Media download ---
+
+const maxMediaBytes = 10 * 1024 * 1024 // 10MB
+
+// downloadMedia fetches a photo from a Zalo CDN URL and saves it as a local temp file.
+// Zalo CDN URLs are auth-restricted and expire, so we must download immediately.
+func (c *Channel) downloadMedia(url string) (string, error) {
+	resp, err := c.client.Get(url)
+	if err != nil {
+		return "", fmt.Errorf("fetch: %w", err)
+	}
+	defer resp.Body.Close()
+
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("http %d", resp.StatusCode)
+	}
+
+	// Detect extension from Content-Type
+	ext := ".jpg"
+	ct := resp.Header.Get("Content-Type")
+	switch {
+	case strings.Contains(ct, "png"):
+		ext = ".png"
+	case strings.Contains(ct, "gif"):
+		ext = ".gif"
+	case strings.Contains(ct, "webp"):
+		ext = ".webp"
+	}
+
+	f, err := os.CreateTemp("", "goclaw_zalo_*"+ext)
+	if err != nil {
+		return "", fmt.Errorf("create temp: %w", err)
+	}
+	defer f.Close()
+
+	n, err := io.Copy(f, io.LimitReader(resp.Body, maxMediaBytes))
+	if err != nil {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("write: %w", err)
+	}
+	if n == 0 {
+		os.Remove(f.Name())
+		return "", fmt.Errorf("empty response")
+	}
+
+	slog.Debug("zalo media downloaded", "path", f.Name(), "size", n)
+	return f.Name(), nil
+}
+
 // --- Chunked text sending ---
 
 func (c *Channel) sendChunkedText(chatID, text string) error {
@@ -358,6 +426,7 @@ type zaloMessage struct {
 	MessageID string   `json:"message_id"`
 	Text      string   `json:"text"`
 	Photo     string   `json:"photo"`
+	PhotoURL  string   `json:"photo_url"`
 	Caption   string   `json:"caption"`
 	From      zaloFrom `json:"from"`
 	Chat      zaloChat `json:"chat"`
@@ -379,7 +448,7 @@ type zaloUpdate struct {
 	Message   *zaloMessage `json:"message,omitempty"`
 }
 
-func (c *Channel) callAPI(method string, body interface{}) (json.RawMessage, error) {
+func (c *Channel) callAPI(method string, body any) (json.RawMessage, error) {
 	url := fmt.Sprintf("%s/bot%s/%s", apiBase, c.token, method)
 
 	var reqBody io.Reader
@@ -436,7 +505,7 @@ func (c *Channel) getMe() (*zaloBotInfo, error) {
 }
 
 func (c *Channel) getUpdates(timeout int) ([]zaloUpdate, error) {
-	params := map[string]interface{}{
+	params := map[string]any{
 		"timeout": timeout,
 	}
 
@@ -453,7 +522,7 @@ func (c *Channel) getUpdates(timeout int) ([]zaloUpdate, error) {
 }
 
 func (c *Channel) sendMessage(chatID, text string) error {
-	params := map[string]interface{}{
+	params := map[string]any{
 		"chat_id": chatID,
 		"text":    text,
 	}
@@ -463,7 +532,7 @@ func (c *Channel) sendMessage(chatID, text string) error {
 }
 
 func (c *Channel) sendPhoto(chatID, photoURL, caption string) error {
-	params := map[string]interface{}{
+	params := map[string]any{
 		"chat_id": chatID,
 		"photo":   photoURL,
 	}

@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { FileText } from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import type { BootstrapFile } from "@/types/agent";
@@ -42,6 +43,7 @@ export function FileSidebar({
   onSelect,
   isUserScoped,
 }: FileSidebarProps) {
+  const { t } = useTranslation("agents");
   return (
     <div className="w-56 shrink-0 overflow-y-auto rounded-lg bg-muted/40 p-2">
       <div className="space-y-0.5">
@@ -52,14 +54,11 @@ export function FileSidebar({
             <button
               key={file.name}
               type="button"
-              onClick={() => !userScoped && onSelect(file.name)}
-              disabled={userScoped}
+              onClick={() => onSelect(file.name)}
               className={`flex w-full items-center gap-2 rounded-md px-2.5 py-1.5 text-[13px] transition-colors ${
-                userScoped
-                  ? "cursor-not-allowed opacity-50"
-                  : active
-                    ? "bg-background text-foreground shadow-sm cursor-pointer"
-                    : "text-foreground hover:bg-background/60 cursor-pointer"
+                active
+                  ? "bg-background text-foreground shadow-sm cursor-pointer"
+                  : "text-foreground hover:bg-background/60 cursor-pointer"
               }`}
             >
               <FileText className="mt-0.5 h-3.5 w-3.5 shrink-0 self-start" />
@@ -67,19 +66,19 @@ export function FileSidebar({
                 <div className="truncate">{file.name}</div>
                 {userScoped ? (
                   <Badge variant="outline" className="mt-0.5 text-[10px]">
-                    per-user
+                    {t("files.perUser")}
                   </Badge>
                 ) : file.missing ? (
                   <span className="text-[10px] text-muted-foreground/60">
-                    empty
+                    {t("files.emptyFile")}
                   </span>
                 ) : (
                   <div className="text-[10px] text-muted-foreground/60">
-                    Est {formatTokenCount(
+                    {t("files.estTokens", { tokens: formatTokenCount(
                       file.content
                         ? estimateTokensFromContent(file.content)
                         : estimateTokensFromBytes(file.size),
-                    )} tokens
+                    ) })}
                   </div>
                 )}
               </div>

@@ -11,6 +11,10 @@ import (
 )
 
 func (s *PGCronStore) AddJob(name string, schedule store.CronSchedule, message string, deliver bool, channel, to, agentID, userID string) (*store.CronJob, error) {
+	// Apply default timezone for cron expressions when not set per-job.
+	if schedule.TZ == "" && schedule.Kind == "cron" && s.defaultTZ != "" {
+		schedule.TZ = s.defaultTZ
+	}
 	if schedule.TZ != "" {
 		if _, err := time.LoadLocation(schedule.TZ); err != nil {
 			return nil, fmt.Errorf("invalid timezone: %s", schedule.TZ)
@@ -58,7 +62,7 @@ func (s *PGCronStore) AddJob(name string, schedule store.CronSchedule, message s
 		intervalMS = schedule.EveryMS
 	}
 
-	nextRun := computeNextRun(&schedule, now)
+	nextRun := computeNextRun(&schedule, now, s.defaultTZ)
 
 	_, err := s.db.Exec(
 		`INSERT INTO cron_jobs (id, agent_id, user_id, name, enabled, schedule_kind, cron_expression, run_at, timezone,
@@ -94,7 +98,7 @@ func (s *PGCronStore) ListJobs(includeDisabled bool, agentID, userID string) []s
 		 interval_ms, payload, delete_after_run, next_run_at, last_run_at, last_status, last_error,
 		 created_at, updated_at FROM cron_jobs WHERE 1=1`
 
-	var args []interface{}
+	var args []any
 	argIdx := 1
 
 	if !includeDisabled {

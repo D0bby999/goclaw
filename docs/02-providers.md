@@ -45,6 +45,8 @@ The Anthropic provider uses `x-api-key` header authentication and the `anthropic
 | perplexity | OpenAI-compatible | `https://api.perplexity.ai` | `sonar-pro` |
 | dashscope | OpenAI-compatible | `https://dashscope-intl.aliyuncs.com/compatible-mode/v1` | `qwen3-max` |
 | bailian | OpenAI-compatible | `https://coding-intl.dashscope.aliyuncs.com/v1` | `qwen3.5-plus` |
+| zai | OpenAI-compatible | `https://api.z.ai/api/paas/v4` | `glm-5` |
+| zai_coding | OpenAI-compatible | `https://api.z.ai/api/coding/paas/v4` | `glm-5` |
 
 ---
 
@@ -200,9 +202,9 @@ The Anthropic provider calls `CleanSchemaForProvider("anthropic", ...)` when con
 
 ---
 
-## 7. Managed Mode -- Providers from Database
+## 7. Providers from Database
 
-In managed mode, providers are loaded from the `llm_providers` table in addition to the config file. Database providers override config providers with the same name.
+Providers are loaded from the `llm_providers` table in addition to the config file. Database providers override config providers with the same name.
 
 ### Loading Flow
 

@@ -5,6 +5,7 @@ import (
 	"database/sql"
 	"fmt"
 	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/google/uuid"
@@ -103,7 +104,7 @@ const agentSelectCols = `id, agent_key, display_name, frontmatter, owner_id, pro
 		 context_window, max_tool_iterations, workspace, restrict_to_workspace,
 		 tools_config, sandbox_config, subagents_config, memory_config,
 		 compaction_config, context_pruning, other_config,
-		 agent_type, is_default, status, created_at, updated_at`
+		 agent_type, is_default, status, budget_monthly_cents, created_at, updated_at`
 
 func (s *PGAgentStore) Create(ctx context.Context, agent *store.AgentData) error {
 	if agent.ID == uuid.Nil {
@@ -117,13 +118,13 @@ func (s *PGAgentStore) Create(ctx context.Context, agent *store.AgentData) error
 		 context_window, max_tool_iterations, workspace, restrict_to_workspace,
 		 tools_config, sandbox_config, subagents_config, memory_config,
 		 compaction_config, context_pruning, other_config,
-		 agent_type, is_default, status, created_at, updated_at)
-		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23)`,
+		 agent_type, is_default, status, budget_monthly_cents, created_at, updated_at)
+		 VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19, $20, $21, $22, $23, $24)`,
 		agent.ID, agent.AgentKey, agent.DisplayName, sql.NullString{String: agent.Frontmatter, Valid: agent.Frontmatter != ""}, agent.OwnerID, agent.Provider, agent.Model,
 		agent.ContextWindow, agent.MaxToolIterations, agent.Workspace, agent.RestrictToWorkspace,
 		jsonOrEmpty(agent.ToolsConfig), jsonOrNull(agent.SandboxConfig), jsonOrNull(agent.SubagentsConfig), jsonOrNull(agent.MemoryConfig),
 		jsonOrNull(agent.CompactionConfig), jsonOrNull(agent.ContextPruning), jsonOrEmpty(agent.OtherConfig),
-		agent.AgentType, agent.IsDefault, agent.Status, now, now,
+		agent.AgentType, agent.IsDefault, agent.Status, agent.BudgetMonthlyCents, now, now,
 	)
 	if err != nil {
 		return err
@@ -318,7 +319,7 @@ func (s *PGAgentStore) ListAccessible(ctx context.Context, userID string) ([]sto
 // --- Scan helpers ---
 
 type agentRowScanner interface {
-	Scan(dest ...interface{}) error
+	Scan(dest ...any) error
 }
 
 func scanAgentRow(row agentRowScanner) (*store.AgentData, error) {
@@ -329,7 +330,7 @@ func scanAgentRow(row agentRowScanner) (*store.AgentData, error) {
 	err := row.Scan(&d.ID, &d.AgentKey, &d.DisplayName, &frontmatter, &d.OwnerID, &d.Provider, &d.Model,
 		&d.ContextWindow, &d.MaxToolIterations, &d.Workspace, &d.RestrictToWorkspace,
 		&toolsCfg, &sandboxCfg, &subagentsCfg, &memoryCfg, &compactionCfg, &pruningCfg, &otherCfg,
-		&d.AgentType, &d.IsDefault, &d.Status, &d.CreatedAt, &d.UpdatedAt)
+		&d.AgentType, &d.IsDefault, &d.Status, &d.BudgetMonthlyCents, &d.CreatedAt, &d.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -380,7 +381,7 @@ func execMapUpdateWhere(ctx context.Context, db *sql.DB, table string, updates m
 		return nil
 	}
 	var setClauses []string
-	var args []interface{}
+	var args []any
 	i := 1
 	for col, val := range updates {
 		setClauses = append(setClauses, fmt.Sprintf("%s = $%d", col, i))
@@ -405,25 +406,25 @@ func execMapUpdateWhere(ctx context.Context, db *sql.DB, table string, updates m
 }
 
 func joinStrings(s []string, sep string) string {
-	result := ""
+	var result strings.Builder
 	for i, v := range s {
 		if i > 0 {
-			result += sep
+			result.WriteString(sep)
 		}
-		result += v
+		result.WriteString(v)
 	}
-	return result
+	return result.String()
 }
 
 func replaceIDX(s, replacement string) string {
-	result := ""
+	var result strings.Builder
 	for i := 0; i < len(s); i++ {
 		if i+4 <= len(s) && s[i:i+4] == "$IDX" {
-			result += replacement
+			result.WriteString(replacement)
 			i += 3
 		} else {
-			result += string(s[i])
+			result.WriteString(string(s[i]))
 		}
 	}
-	return result
+	return result.String()
 }

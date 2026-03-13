@@ -1,3 +1,4 @@
+import { useTranslation } from "react-i18next";
 import { Circle } from "lucide-react";
 import { MessageBubble } from "@/components/chat/message-bubble";
 import { StreamingText } from "@/components/chat/streaming-text";
@@ -26,6 +27,7 @@ export function ChatThread({
   loading,
   scrollTrigger = 0,
 }: ChatThreadProps) {
+  const { t } = useTranslation("chat");
   const { ref, onScroll } = useAutoScroll<HTMLDivElement>(
     [messages.length, streamText, thinkingText, toolStream.length],
     100,
@@ -44,8 +46,8 @@ export function ChatThread({
   if (messages.length === 0 && !isRunning) {
     return (
       <div className="flex flex-1 flex-col items-center justify-center gap-2 text-muted-foreground">
-        <p className="text-lg font-medium">Start a conversation</p>
-        <p className="text-sm">Send a message to begin chatting with the agent.</p>
+        <p className="text-lg font-medium">{t("empty.title")}</p>
+        <p className="text-sm">{t("empty.description")}</p>
       </div>
     );
   }
@@ -54,7 +56,7 @@ export function ChatThread({
     <div
       ref={ref}
       onScroll={onScroll}
-      className="flex-1 overflow-y-auto px-4 py-4"
+      className="flex-1 overflow-y-auto overscroll-contain px-4 py-4"
     >
       <div className="mx-auto max-w-3xl space-y-4">
         {messages.map((msg, i) => (

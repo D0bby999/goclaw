@@ -43,6 +43,8 @@ const (
 	// Team task lifecycle events.
 	EventTeamTaskClaimed   = "team.task.claimed"
 	EventTeamTaskCancelled = "team.task.cancelled"
+	EventTeamTaskApproved  = "team.task.approved"
+	EventTeamTaskRejected  = "team.task.rejected"
 
 	// Team CRUD events (admin operations).
 	EventTeamCreated       = "team.created"
@@ -62,6 +64,18 @@ const (
 
 	// Trace lifecycle events (realtime trace/span updates).
 	EventTraceUpdated = "trace.updated"
+
+	// Skill dependency check events (realtime progress during startup/rescan).
+	EventSkillDepsChecked  = "skill.deps.checked"
+	EventSkillDepsComplete = "skill.deps.complete"
+
+	// Skill dependency install events (triggered by POST /v1/skills/install-deps).
+	EventSkillDepsInstalling = "skill.deps.installing"
+	EventSkillDepsInstalled  = "skill.deps.installed"
+
+	// Per-item install events (triggered by POST /v1/skills/install-dep).
+	EventSkillDepItemInstalling = "skill.dep.item.installing" // payload: {dep: "pip:openpyxl"}
+	EventSkillDepItemInstalled  = "skill.dep.item.installed"  // payload: {dep, ok: bool, error?: string}
 
 	// Cache invalidation events (internal, not forwarded to WS clients).
 	EventCacheInvalidate = "cache.invalidate"
@@ -83,6 +97,7 @@ const (
 	AgentEventToolCall     = "tool.call"
 	AgentEventToolResult   = "tool.result"
 	AgentEventBlockReply   = "block.reply"
+	AgentEventActivity     = "activity" // agent phase transitions: thinking, tool_exec, compacting
 )
 
 // Chat event subtypes (in payload.type)

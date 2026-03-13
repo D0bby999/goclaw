@@ -46,19 +46,19 @@ func (t *ListFilesTool) SetSandboxKey(key string) {}
 
 func (t *ListFilesTool) Name() string        { return "list_files" }
 func (t *ListFilesTool) Description() string { return "List files and directories in a path" }
-func (t *ListFilesTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ListFilesTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
+		"properties": map[string]any{
+			"path": map[string]any{
 				"type":        "string",
-				"description": "Directory path to list (default: workspace root)",
+				"description": "Directory path (relative to workspace; omit for workspace root)",
 			},
 		},
 	}
 }
 
-func (t *ListFilesTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+func (t *ListFilesTool) Execute(ctx context.Context, args map[string]any) *Result {
 	path, _ := args["path"].(string)
 	if path == "" {
 		path = "."
@@ -88,7 +88,7 @@ func (t *ListFilesTool) Execute(ctx context.Context, args map[string]interface{}
 	if workspace == "" {
 		workspace = t.workspace
 	}
-	resolved, err := resolvePath(path, workspace, t.restrict)
+	resolved, err := resolvePath(path, workspace, effectiveRestrict(ctx, t.restrict))
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -142,7 +142,7 @@ func (t *ListFilesTool) executeInSandbox(ctx context.Context, path, sandboxKey s
 }
 
 func (t *ListFilesTool) getFsBridge(ctx context.Context, sandboxKey string) (*sandbox.FsBridge, error) {
-	sb, err := t.sandboxMgr.Get(ctx, sandboxKey, t.workspace)
+	sb, err := t.sandboxMgr.Get(ctx, sandboxKey, t.workspace, SandboxConfigFromCtx(ctx))
 	if err != nil {
 		return nil, err
 	}

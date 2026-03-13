@@ -1,4 +1,5 @@
 import { useState, useEffect, useMemo, useCallback } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -10,7 +11,7 @@ import { TooltipProvider } from "@/components/ui/tooltip";
 import { InfoTip } from "@/pages/setup/info-tip";
 import { useAgents } from "@/pages/agents/hooks/use-agents";
 import { SummoningModal } from "@/pages/agents/summoning-modal";
-import { AGENT_PRESETS } from "@/pages/agents/agent-presets";
+import { useAgentPresets } from "@/pages/agents/agent-presets";
 import { useWsEvent } from "@/hooks/use-ws-event";
 import { slugify, isValidSlug } from "@/lib/slug";
 import type { ProviderData } from "@/types/provider";
@@ -22,16 +23,26 @@ interface StepAgentProps {
   provider: ProviderData | null;
   model: string | null;
   onComplete: (agent: AgentData) => void;
+  onBack?: () => void;
+  existingAgent?: AgentData | null;
 }
 
-export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
-  const { createAgent, deleteAgent, resummonAgent } = useAgents();
+export function StepAgent({ provider, model, onComplete, onBack, existingAgent }: StepAgentProps) {
+  const { t } = useTranslation("setup");
+  const { createAgent, updateAgent, deleteAgent, resummonAgent } = useAgents();
+  const agentPresets = useAgentPresets();
 
-  const [displayName] = useState("GoClaw");
-  const [agentKey, setAgentKey] = useState("goclaw");
-  const [keyTouched, setKeyTouched] = useState(false);
-  const [description, setDescription] = useState(DEFAULT_PROMPT);
-  const [selfEvolve, setSelfEvolve] = useState(false);
+  const isEditing = !!existingAgent;
+
+  const [displayName, setDisplayName] = useState(existingAgent?.display_name ?? "GoClaw");
+  const [agentKey, setAgentKey] = useState(existingAgent?.agent_key ?? "goclaw");
+  const [keyTouched, setKeyTouched] = useState(isEditing);
+  const [description, setDescription] = useState(
+    existingAgent?.other_config?.description as string ?? DEFAULT_PROMPT,
+  );
+  const [selfEvolve, setSelfEvolve] = useState(
+    !!(existingAgent?.other_config?.self_evolve),
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -70,9 +81,9 @@ export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
     if (agentResult) onComplete(agentResult);
   };
 
-  const handleCreate = async () => {
+  const handleSubmit = async () => {
     if (!agentKey.trim() || !isValidSlug(agentKey)) return;
-    if (!provider) { setError("No provider available"); return; }
+    if (!provider) { setError(t("agent.errors.noProvider")); return; }
 
     setLoading(true);
     setError("");
@@ -81,23 +92,36 @@ export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
       const otherConfig: Record<string, unknown> = {};
       if (description.trim()) otherConfig.description = description.trim();
       if (selfEvolve) otherConfig.self_evolve = true;
-      const data: Partial<AgentData> = {
-        agent_key: agentKey.trim(),
-        display_name: displayName.trim() || undefined,
-        provider: provider.name,
-        model: model || "",
-        agent_type: "predefined",
-        is_default: true,
-        other_config: Object.keys(otherConfig).length > 0 ? otherConfig : undefined,
-      };
 
-      const result = await createAgent(data) as AgentData;
-      setAgentResult(result);
-      setSummoningOutcome("pending");
-      setCreatedAgent({ id: result.id, name: displayName.trim() || agentKey });
-      setSummoningOpen(true);
+      if (isEditing) {
+        // Update existing agent — skip summoning
+        const patch: Partial<AgentData> = {
+          display_name: displayName.trim() || undefined,
+          provider: provider.name,
+          model: model || "",
+          other_config: Object.keys(otherConfig).length > 0 ? otherConfig : undefined,
+        };
+        await updateAgent(existingAgent!.id, patch);
+        onComplete({ ...existingAgent!, ...patch } as AgentData);
+      } else {
+        const data: Partial<AgentData> = {
+          agent_key: agentKey.trim(),
+          display_name: displayName.trim() || undefined,
+          provider: provider.name,
+          model: model || "",
+          agent_type: "predefined",
+          is_default: true,
+          other_config: Object.keys(otherConfig).length > 0 ? otherConfig : undefined,
+        };
+
+        const result = await createAgent(data) as AgentData;
+        setAgentResult(result);
+        setSummoningOutcome("pending");
+        setCreatedAgent({ id: result.id, name: displayName.trim() || agentKey });
+        setSummoningOpen(true);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create agent");
+      setError(err instanceof Error ? err.message : t("agent.errors.failedCreate"));
     } finally {
       setLoading(false);
     }
@@ -119,7 +143,7 @@ export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
     setCreatedAgent(null);
     setSummoningOpen(false);
     setSummoningOutcome("pending");
-    setError("Summoning failed. Please adjust your settings and try again.");
+    setError(t("agent.summoningFailed"));
   };
 
   return (
@@ -128,21 +152,21 @@ export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
         <CardContent className="space-y-4 pt-6">
           <TooltipProvider>
             <div className="space-y-1">
-              <h2 className="text-lg font-semibold">Create Your First Agent</h2>
+              <h2 className="text-lg font-semibold">{t("agent.title")}</h2>
               <p className="text-sm text-muted-foreground">
-                An agent is your AI assistant. Customize its name and personality.
+                {t("agent.description")}
               </p>
             </div>
 
             {/* Provider + model info */}
             <div className="flex flex-wrap items-center gap-x-4 gap-y-1">
               <div className="flex items-center gap-2">
-                <span className="text-sm text-muted-foreground">Provider:</span>
+                <span className="text-sm text-muted-foreground">{t("agent.provider")}</span>
                 <Badge variant="secondary">{providerLabel}</Badge>
               </div>
               {model && (
                 <div className="flex items-center gap-2">
-                  <span className="text-sm text-muted-foreground">Model:</span>
+                  <span className="text-sm text-muted-foreground">{t("agent.model")}</span>
                   <Badge variant="outline">{model}</Badge>
                 </div>
               )}
@@ -151,25 +175,26 @@ export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
             <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
               <div className="space-y-2">
                 <Label className="inline-flex items-center gap-1.5">
-                  Display Name
-                  <InfoTip text="Will be auto-generated during summoning based on the agent personality." />
+                  {t("agent.displayName")}
+                  <InfoTip text={t("agent.displayNameHint")} />
                 </Label>
                 <Input
                   value={displayName}
-                  readOnly
-                  className="bg-muted cursor-default"
+                  onChange={(e) => setDisplayName(e.target.value)}
+                  placeholder={t("agent.displayNamePlaceholder", "e.g. GoClaw")}
                 />
               </div>
               <div className="space-y-2">
                 <Label className="inline-flex items-center gap-1.5">
-                  Agent Key
-                  <InfoTip text="Unique identifier for the agent. Lowercase letters, numbers, and hyphens only." />
+                  {t("agent.agentKey")}
+                  <InfoTip text={t("agent.agentKeyHint")} />
                 </Label>
                 <Input
                   value={agentKey}
                   onChange={(e) => { setKeyTouched(true); setAgentKey(e.target.value); }}
                   onBlur={() => setAgentKey(slugify(agentKey))}
-                  placeholder="my-agent"
+                  placeholder={t("agent.agentKeyPlaceholder")}
+                  disabled={isEditing}
                 />
               </div>
             </div>
@@ -177,11 +202,11 @@ export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
             {/* Prompt / description */}
             <div className="space-y-3">
               <Label className="inline-flex items-center gap-1.5">
-                Agent Personality
-                <InfoTip text="Describe your agent's role and behavior. AI will generate context files from this during summoning." />
+                {t("agent.personality")}
+                <InfoTip text={t("agent.personalityHint")} />
               </Label>
               <div className="flex flex-wrap gap-1.5">
-                {AGENT_PRESETS.map((preset) => (
+                {agentPresets.map((preset) => (
                   <button
                     key={preset.label}
                     type="button"
@@ -195,16 +220,16 @@ export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
               <Textarea
                 value={description}
                 onChange={(e) => setDescription(e.target.value)}
-                placeholder="Describe your agent's personality, purpose, and behavior..."
+                placeholder={t("agent.personalityPlaceholder")}
                 className="min-h-[120px]"
               />
               <p className="text-xs text-muted-foreground">
-                Customize this prompt to shape your agent's personality and expertise.
+                {t("agent.personalityHintBottom")}
               </p>
               <div className="flex items-center justify-between gap-4 rounded-md border px-3 py-2.5">
                 <div className="space-y-0.5">
-                  <Label htmlFor="setup-self-evolve" className="text-sm font-normal">Self-Evolution</Label>
-                  <p className="text-xs text-muted-foreground">Allow agent to evolve its communication style over time via SOUL.md</p>
+                  <Label htmlFor="setup-self-evolve" className="text-sm font-normal">{t("agent.selfEvolve")}</Label>
+                  <p className="text-xs text-muted-foreground">{t("agent.selfEvolveDesc")}</p>
                 </div>
                 <Switch id="setup-self-evolve" checked={selfEvolve} onCheckedChange={setSelfEvolve} />
               </div>
@@ -212,12 +237,19 @@ export function StepAgent({ provider, model, onComplete }: StepAgentProps) {
 
             {error && <p className="text-sm text-destructive">{error}</p>}
 
-            <div className="flex justify-end">
+            <div className={`flex ${onBack ? "justify-between" : "justify-end"} gap-2`}>
+              {onBack && (
+                <Button variant="secondary" onClick={onBack}>
+                  ← {t("common.back")}
+                </Button>
+              )}
               <Button
-                onClick={handleCreate}
+                onClick={handleSubmit}
                 disabled={loading || !agentKey.trim() || !isValidSlug(agentKey) || !description.trim()}
               >
-                {loading ? "Creating..." : "Create Agent"}
+                {loading
+                  ? isEditing ? t("agent.updating", "Updating...") : t("agent.creating")
+                  : isEditing ? t("agent.update", "Update") : t("agent.create")}
               </Button>
             </div>
           </TooltipProvider>

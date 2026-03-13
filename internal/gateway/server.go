@@ -40,6 +40,7 @@ type Server struct {
 	agentsHandler  *httpapi.AgentsHandler // agent CRUD API
 	skillsHandler  *httpapi.SkillsHandler // skill management API
 	tracesHandler  *httpapi.TracesHandler // LLM trace listing API
+	wakeHandler    *httpapi.WakeHandler  // external wake/trigger API
 	mcpHandler         *httpapi.MCPHandler         // MCP server management API
 	customToolsHandler      *httpapi.CustomToolsHandler      // custom tool CRUD API
 	channelInstancesHandler *httpapi.ChannelInstancesHandler // channel instance CRUD API
@@ -49,6 +50,7 @@ type Server struct {
 	projectsHandler         *httpapi.ProjectsHandler         // projects orchestration API
 	pendingMessagesHandler  *httpapi.PendingMessagesHandler  // pending messages API
 	memoryHandler           *httpapi.MemoryHandler           // memory management API
+	kgHandler               *httpapi.KnowledgeGraphHandler   // knowledge graph API
 	oauthHandler            *httpapi.OAuthHandler            // OAuth endpoints
 	newsHandler             *httpapi.NewsHandler             // news digest API
 	analyticsHandler        *httpapi.AnalyticsHandler        // analytics API
@@ -168,47 +170,52 @@ func (s *Server) BuildMux() *http.ServeMux {
 		mux.Handle("/v1/tools/invoke", toolsHandler)
 	}
 
-	// Managed mode: agent CRUD + shares API
+	// Agent CRUD + shares API
 	if s.agentsHandler != nil {
 		s.agentsHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: skill management API
+	// Skill management API
 	if s.skillsHandler != nil {
 		s.skillsHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: LLM trace listing API
+	// LLM trace listing API
 	if s.tracesHandler != nil {
 		s.tracesHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: MCP server management API
+	// External wake/trigger API
+	if s.wakeHandler != nil {
+		s.wakeHandler.RegisterRoutes(mux)
+	}
+
+	// MCP server management API
 	if s.mcpHandler != nil {
 		s.mcpHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: custom tool CRUD API
+	// Custom tool CRUD API
 	if s.customToolsHandler != nil {
 		s.customToolsHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: channel instance CRUD API
+	// Channel instance CRUD API
 	if s.channelInstancesHandler != nil {
 		s.channelInstancesHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: provider & model CRUD API
+	// Provider & model CRUD API
 	if s.providersHandler != nil {
 		s.providersHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: delegation history API
+	// Delegation history API
 	if s.delegationsHandler != nil {
 		s.delegationsHandler.RegisterRoutes(mux)
 	}
 
-	// Managed mode: builtin tool management API
+	// Builtin tool management API
 	if s.builtinToolsHandler != nil {
 		s.builtinToolsHandler.RegisterRoutes(mux)
 	}
@@ -251,6 +258,14 @@ func (s *Server) BuildMux() *http.ServeMux {
 	// Media serve endpoint (available in all modes)
 	if s.mediaServeHandler != nil {
 		s.mediaServeHandler.RegisterRoutes(mux)
+	}
+
+	if s.activityHandler != nil {
+		s.activityHandler.RegisterRoutes(mux)
+	}
+
+	if s.usageHandler != nil {
+		s.usageHandler.RegisterRoutes(mux)
 	}
 
 	// OAuth endpoints (available in all modes)
@@ -451,6 +466,9 @@ func (s *Server) SetSkillsHandler(h *httpapi.SkillsHandler) { s.skillsHandler = 
 
 // SetTracesHandler sets the LLM trace listing handler.
 func (s *Server) SetTracesHandler(h *httpapi.TracesHandler) { s.tracesHandler = h }
+
+// SetWakeHandler sets the external wake/trigger handler.
+func (s *Server) SetWakeHandler(h *httpapi.WakeHandler) { s.wakeHandler = h }
 
 // SetMCPHandler sets the MCP server management handler.
 func (s *Server) SetMCPHandler(h *httpapi.MCPHandler) { s.mcpHandler = h }

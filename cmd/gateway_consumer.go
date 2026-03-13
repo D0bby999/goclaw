@@ -15,6 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/scheduler"
 	"github.com/nextlevelbuilder/goclaw/internal/sessions"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
@@ -25,7 +26,7 @@ import (
 // and routes them through the scheduler/agent loop, then publishes the response back.
 // Also handles subagent announcements: routes them through the parent agent's session
 // (matching TS subagent-announce.ts pattern) so the agent can reformulate for the user.
-func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents *agent.Router, cfg *config.Config, sched *scheduler.Scheduler, channelMgr *channels.Manager, teamStore store.TeamStore, quotaChecker *channels.QuotaChecker, delegateMgr *tools.DelegateManager, sessStore store.SessionStore, agentStore store.AgentStore) {
+func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents *agent.Router, cfg *config.Config, sched *scheduler.Scheduler, channelMgr *channels.Manager, teamStore store.TeamStore, quotaChecker *channels.QuotaChecker, delegateMgr *tools.DelegateManager, sessStore store.SessionStore, agentStore store.AgentStore, contactCollector *store.ContactCollector) {
 	slog.Info("inbound message consumer started")
 
 	// Inbound message deduplication (matching TS src/infra/dedupe.ts + inbound-dedupe.ts).
@@ -93,29 +94,47 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			}
 		}
 
-		// Group-scoped UserID: treat the group as a single "virtual user" for
-		// context files, memory, traces, and seeding. Individual senderID is
-		// preserved in the InboundMessage for pairing/dedup/mention gate.
-		// Format: "group:{channel}:{chatID}" — e.g., "group:telegram:-1002541239372"
-		// For Discord: use guild_id so all channels in the same server share
-		// context files, memory, and seeding (session key stays per-channel).
+		// Group-scoped UserID: context files, memory, traces, and seeding scope.
+		// - Discord guilds: "guild:{guildID}:user:{senderID}" — per-user per-server,
+		//   shared across all channels within the same server. Session key stays per-channel.
+		// - Other platforms: "group:{channel}:{chatID}" — shared by all users in the chat.
+		// Individual senderID is preserved in InboundMessage for pairing/dedup/mention gate.
 		userID := msg.UserID
 		if peerKind == string(sessions.PeerGroup) && msg.ChatID != "" {
-			groupID := msg.ChatID
-			if guildID := msg.Metadata["guild_id"]; guildID != "" {
-				groupID = guildID
+			if guildID := msg.Metadata["guild_id"]; guildID != "" && msg.SenderID != "" {
+				// Discord guild: per-user scope so each member has own profile
+				// across all channels in the same server.
+				userID = fmt.Sprintf("guild:%s:user:%s", guildID, msg.SenderID)
+			} else {
+				groupID := msg.ChatID
+				userID = fmt.Sprintf("group:%s:%s", msg.Channel, groupID)
 			}
-			userID = fmt.Sprintf("group:%s:%s", msg.Channel, groupID)
 		}
 
 		// Persist friendly names from channel metadata into session + user profile.
-		if sessionMeta := extractSessionMetadata(msg, peerKind); len(sessionMeta) > 0 {
+		sessionMeta := extractSessionMetadata(msg, peerKind)
+		if len(sessionMeta) > 0 {
 			sessStore.SetSessionMetadata(sessionKey, sessionMeta)
 			if agentStore != nil {
 				if agentUUID, err := uuid.Parse(agentID); err == nil && agentUUID != uuid.Nil {
 					_ = agentStore.UpdateUserProfileMetadata(ctx, agentUUID, userID, sessionMeta)
 				}
 			}
+		}
+
+		// Auto-collect channel contacts for the contact selector.
+		if contactCollector != nil && msg.SenderID != "" {
+			senderNumericID := msg.SenderID
+			if idx := strings.IndexByte(senderNumericID, '|'); idx > 0 {
+				senderNumericID = senderNumericID[:idx]
+			}
+			channelType := channelMgr.ChannelTypeForName(msg.Channel)
+			if channelType == "" {
+				channelType = msg.Channel // fallback to instance name
+			}
+			displayName := sessionMeta["display_name"]
+			username := sessionMeta["username"]
+			contactCollector.EnsureContact(ctx, channelType, msg.Channel, senderNumericID, userID, displayName, username, peerKind)
 		}
 
 		// --- Quota check ---
@@ -185,8 +204,9 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			chatIDForRun = lk
 		}
 		blockReply := channelMgr != nil && channelMgr.ResolveBlockReply(msg.Channel, cfg.Gateway.BlockReply)
+		toolStatus := cfg.Gateway.ToolStatus == nil || *cfg.Gateway.ToolStatus // default true
 		if channelMgr != nil {
-			channelMgr.RegisterRun(runID, msg.Channel, chatIDForRun, messageID, outMeta, enableStream, blockReply)
+			channelMgr.RegisterRun(runID, msg.Channel, chatIDForRun, messageID, outMeta, enableStream, blockReply, toolStatus)
 		}
 
 		// Group-aware system prompt: help the LLM adapt tone and behavior for group chats.
@@ -220,6 +240,64 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 			fwdMedia = msg.Media
 		} else {
 			reqMedia = msg.Media
+		}
+
+		// Intent classify fast-path: when agent is busy on DM, classify user intent
+		// to detect status queries, cancel requests, or steer/new_task for mid-run injection.
+		// Only for DM (maxConcurrent=1) where messages queue behind the active run.
+		if maxConcurrent == 1 && agents.IsSessionBusy(sessionKey) {
+			if loop, ok := agentLoop.(*agent.Loop); ok && loop.Provider() != nil {
+				locale := msg.Metadata["locale"]
+				if locale == "" {
+					locale = "en"
+				}
+				intent := agent.ClassifyIntent(ctx, loop.Provider(), loop.Model(), msg.Content)
+				switch intent {
+				case agent.IntentStatusQuery:
+					status := agents.GetActivity(sessionKey)
+					reply := agent.FormatStatusReply(status, locale)
+					msgBus.PublishOutbound(bus.OutboundMessage{
+						Channel:  msg.Channel,
+						ChatID:   msg.ChatID,
+						Content:  reply,
+						Metadata: outMeta,
+					})
+					return
+				case agent.IntentCancel:
+					aborted := agents.AbortRunsForSession(sessionKey)
+					if len(aborted) > 0 {
+						slog.Info("inbound: cancelled runs via intent classify",
+							"session", sessionKey, "aborted", aborted)
+						msgBus.PublishOutbound(bus.OutboundMessage{
+							Channel:  msg.Channel,
+							ChatID:   msg.ChatID,
+							Content:  i18n.T(locale, i18n.MsgCancelledReply),
+							Metadata: outMeta,
+						})
+					}
+					return
+				case agent.IntentSteer, agent.IntentNewTask:
+					// Mid-run injection: inject into the running loop instead of queueing.
+					injected := agents.InjectMessage(sessionKey, agent.InjectedMessage{
+						Content: msg.Content,
+						UserID:  userID,
+					})
+					if injected {
+						slog.Info("inbound: injected mid-run message",
+							"intent", string(intent), "session", sessionKey)
+						msgBus.PublishOutbound(bus.OutboundMessage{
+							Channel:  msg.Channel,
+							ChatID:   msg.ChatID,
+							Content:  i18n.T(locale, i18n.MsgInjectedAck),
+							Metadata: outMeta,
+						})
+						return
+					}
+					// Fallback: injection failed (channel full) → fall through to scheduler queue
+					slog.Info("inbound: injection failed, queueing as normal",
+						"intent", string(intent), "session", sessionKey)
+				}
+			}
 		}
 
 		// Schedule through main lane (per-session concurrency controlled by maxConcurrent)
@@ -317,19 +395,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 				Metadata: meta,
 			}
 
-			// Convert media results from agent run to outbound media attachments
-			for _, mr := range outcome.Result.Media {
-				outMsg.Media = append(outMsg.Media, bus.MediaAttachment{
-					URL:         mr.Path,
-					ContentType: mr.ContentType,
-				})
-				if mr.AsVoice {
-					if outMsg.Metadata == nil {
-						outMsg.Metadata = make(map[string]string)
-					}
-					outMsg.Metadata["audio_as_voice"] = "true"
-				}
-			}
+			appendMediaToOutbound(&outMsg, outcome.Result.Media)
 
 			msgBus.PublishOutbound(outMsg)
 		}(msg.Channel, msg.ChatID, sessionKey, runID, outMeta, blockReply)
@@ -492,12 +558,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 					Content:  announceContent,
 					Metadata: meta,
 				}
-				for _, mr := range outcome.Result.Media {
-					outMsg.Media = append(outMsg.Media, bus.MediaAttachment{
-						URL:         mr.Path,
-						ContentType: mr.ContentType,
-					})
-				}
+				appendMediaToOutbound(&outMsg, outcome.Result.Media)
 				msgBus.PublishOutbound(outMsg)
 			}(sessionKey, origChannel, msg.ChatID, msg.SenderID, msg.Metadata["subagent_label"], outMeta, announceReq)
 			continue
@@ -621,12 +682,7 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 					Content:  announceContent,
 					Metadata: meta,
 				}
-				for _, mr := range outcome.Result.Media {
-					outMsg.Media = append(outMsg.Media, bus.MediaAttachment{
-						URL:         mr.Path,
-						ContentType: mr.ContentType,
-					})
-				}
+				appendMediaToOutbound(&outMsg, outcome.Result.Media)
 				msgBus.PublishOutbound(outMsg)
 			}(sessionKey, origChannel, msg.ChatID, msg.SenderID, outMeta, announceReq)
 			continue
@@ -687,15 +743,17 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 					slog.Error("handoff announce: agent run failed", "error", outcome.Err)
 					return
 				}
-				if outcome.Result.Content == "" || agent.IsSilentReply(outcome.Result.Content) {
+				if (outcome.Result.Content == "" && len(outcome.Result.Media) == 0) || agent.IsSilentReply(outcome.Result.Content) {
 					return
 				}
-				msgBus.PublishOutbound(bus.OutboundMessage{
+				outMsg := bus.OutboundMessage{
 					Channel:  origCh,
 					ChatID:   chatID,
 					Content:  outcome.Result.Content,
 					Metadata: meta,
-				})
+				}
+				appendMediaToOutbound(&outMsg, outcome.Result.Media)
+				msgBus.PublishOutbound(outMsg)
 			}(origChannel, msg.ChatID, outMeta)
 			continue
 		}
@@ -755,18 +813,20 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 					slog.Error("teammate message: agent run failed", "error", outcome.Err)
 					return
 				}
-				if outcome.Result.Content == "" || agent.IsSilentReply(outcome.Result.Content) {
+				if (outcome.Result.Content == "" && len(outcome.Result.Media) == 0) || agent.IsSilentReply(outcome.Result.Content) {
 					slog.Info("teammate message: suppressed silent/empty reply", "from", senderID)
 					return
 				}
 				// Deliver response to origin channel (same as delegate/subagent announce).
 				// This allows the lead to respond to users after receiving teammate updates.
-				msgBus.PublishOutbound(bus.OutboundMessage{
+				outMsg := bus.OutboundMessage{
 					Channel:  origCh,
 					ChatID:   chatID,
 					Content:  outcome.Result.Content,
 					Metadata: meta,
-				})
+				}
+				appendMediaToOutbound(&outMsg, outcome.Result.Media)
+				msgBus.PublishOutbound(outMsg)
 			}(origChannel, msg.ChatID, msg.SenderID, outMeta)
 			continue
 		}
@@ -840,5 +900,22 @@ func consumeInboundMessages(ctx context.Context, msgBus *bus.MessageBus, agents 
 
 		// --- Normal messages: route through debouncer ---
 		debouncer.Push(msg)
+	}
+}
+
+// appendMediaToOutbound converts agent MediaResults to outbound MediaAttachments
+// on the given OutboundMessage. Handles voice annotation when applicable.
+func appendMediaToOutbound(msg *bus.OutboundMessage, media []agent.MediaResult) {
+	for _, mr := range media {
+		msg.Media = append(msg.Media, bus.MediaAttachment{
+			URL:         mr.Path,
+			ContentType: mr.ContentType,
+		})
+		if mr.AsVoice {
+			if msg.Metadata == nil {
+				msg.Metadata = make(map[string]string)
+			}
+			msg.Metadata["audio_as_voice"] = "true"
+		}
 	}
 }

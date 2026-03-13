@@ -56,22 +56,26 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 	if req.SenderID != "" {
 		ctx = store.WithSenderID(ctx, req.SenderID)
 	}
-	// Inject per-agent vision/imagegen config for read_image/create_image tools
-	if l.agentToolPolicy != nil {
-		if l.agentToolPolicy.Vision != nil {
-			ctx = tools.WithVisionConfig(ctx, l.agentToolPolicy.Vision)
-		}
-		if l.agentToolPolicy.ImageGen != nil {
-			ctx = tools.WithImageGenConfig(ctx, l.agentToolPolicy.ImageGen)
-		}
-	}
-	// Inject global builtin tool settings (DB-level defaults, lower priority than per-agent)
+	// Inject global builtin tool settings for media tools (provider chain)
 	if l.builtinToolSettings != nil {
 		ctx = tools.WithBuiltinToolSettings(ctx, l.builtinToolSettings)
 	}
 	// Inject channel type into context for tools (e.g. message tool needs it for Zalo group routing)
 	if req.ChannelType != "" {
 		ctx = tools.WithToolChannelType(ctx, req.ChannelType)
+	}
+	// Inject per-agent overrides from DB so tools honor per-agent settings.
+	if l.restrictToWs != nil {
+		ctx = tools.WithRestrictToWorkspace(ctx, *l.restrictToWs)
+	}
+	if l.subagentsCfg != nil {
+		ctx = tools.WithSubagentConfig(ctx, l.subagentsCfg)
+	}
+	if l.memoryCfg != nil {
+		ctx = tools.WithMemoryConfig(ctx, l.memoryCfg)
+	}
+	if l.sandboxCfg != nil {
+		ctx = tools.WithSandboxConfig(ctx, l.sandboxCfg)
 	}
 
 	// Per-user workspace isolation.
@@ -99,7 +103,13 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			l.userWorkspaces.Store(req.UserID, ws)
 			cachedWs = ws
 		}
-		effectiveWorkspace := filepath.Join(cachedWs.(string), sanitizePathSegment(req.UserID))
+		effectiveWorkspace := cachedWs.(string)
+		if !l.shouldShareWorkspace(req.UserID, req.PeerKind) {
+			effectiveWorkspace = filepath.Join(effectiveWorkspace, sanitizePathSegment(req.UserID))
+		}
+		if l.shouldShareMemory() {
+			ctx = store.WithSharedMemory(ctx)
+		}
 		if err := os.MkdirAll(effectiveWorkspace, 0755); err != nil {
 			slog.Warn("failed to create user workspace directory", "workspace", effectiveWorkspace, "user", req.UserID, "error", err)
 		}
@@ -234,6 +244,9 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 	}
 	if len(docRefs) > 0 {
 		ctx = tools.WithMediaDocRefs(ctx, docRefs)
+		// Enrich the last user message with persisted file paths so skills can access
+		// documents via exec (e.g. pypdf). Only for current-turn refs (just persisted).
+		l.enrichDocumentPaths(messages, mediaRefs)
 	}
 
 	// 2c. Collect audio MediaRefs (historical + current) for read_audio tool.
@@ -252,6 +265,8 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 	}
 	if len(audioRefs) > 0 {
 		ctx = tools.WithMediaAudioRefs(ctx, audioRefs)
+		// Embed media IDs into <media:audio> tags so LLM can reference them.
+		l.enrichAudioIDs(messages, mediaRefs)
 	}
 
 	// 2d. Collect video MediaRefs (historical + current) for read_video tool.
@@ -270,6 +285,8 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 	}
 	if len(videoRefs) > 0 {
 		ctx = tools.WithMediaVideoRefs(ctx, videoRefs)
+		// Embed media IDs into <media:video> tags so LLM can reference them.
+		l.enrichVideoIDs(messages, mediaRefs)
 	}
 
 	// 2e. Cross-session recovery: notify team leads about orphaned pending tasks
@@ -334,7 +351,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 	totalToolCalls := 0
 	var finalContent string
 	var finalThinking string
-	var asyncToolCalls []string   // track async spawn tool names for fallback
+	var asyncToolCalls []string    // track async spawn tool names for fallback
 	var mediaResults []MediaResult // media files from tool MEDIA: results
 	var deliverables []string      // actual content from tool outputs (for team task results)
 	var blockReplies int           // count of block.reply events emitted (for dedup in consumer)
@@ -347,7 +364,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 	// Team task orphan detection: track team_tasks create vs spawn calls.
 	// If the LLM creates tasks but forgets to spawn, inject a reminder.
 	var teamTaskCreates int  // count of team_tasks action=create calls
-	var teamTaskSpawns  int  // count of spawn calls with team_task_id
+	var teamTaskSpawns int   // count of spawn calls with team_task_id
 	var teamTaskRetried bool // only retry once to prevent infinite loops
 
 	// Inject retry hook so channels can update placeholder on LLM retries.
@@ -369,10 +386,31 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		maxIter = req.MaxIterations
 	}
 
+	// Budget check: query monthly spent once before starting iterations.
+	if l.budgetMonthlyCents > 0 && l.tracingStore != nil && l.agentUUID != uuid.Nil {
+		now := time.Now().UTC()
+		spent, err := l.tracingStore.GetMonthlyAgentCost(ctx, l.agentUUID, now.Year(), now.Month())
+		if err == nil {
+			spentCents := int(spent * 100)
+			if spentCents >= l.budgetMonthlyCents {
+				slog.Warn("agent budget exceeded", "agent", l.id, "spent_cents", spentCents, "budget_cents", l.budgetMonthlyCents)
+				return nil, fmt.Errorf("monthly budget exceeded ($%.2f / $%.2f)", spent, float64(l.budgetMonthlyCents)/100)
+			}
+		}
+	}
+
 	for iteration < maxIter {
 		iteration++
 
 		slog.Debug("agent iteration", "agent", l.id, "iteration", iteration, "messages", len(messages))
+
+		// Emit activity event: thinking phase
+		emitRun(AgentEvent{
+			Type:    protocol.AgentEventActivity,
+			AgentID: l.id,
+			RunID:   req.RunID,
+			Payload: map[string]any{"phase": "thinking", "iteration": iteration},
+		})
 
 		// Build provider request with policy-filtered tools
 		var toolDefs []providers.ToolDefinition
@@ -391,7 +429,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			Messages: messages,
 			Tools:    toolDefs,
 			Model:    l.model,
-			Options: map[string]interface{}{
+			Options: map[string]any{
 				providers.OptMaxTokens:   8192,
 				providers.OptTemperature: 0.7,
 				providers.OptSessionKey:  req.SessionKey,
@@ -416,6 +454,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		var err error
 
 		llmSpanStart := time.Now().UTC()
+		llmSpanID := l.emitLLMSpanStart(ctx, llmSpanStart, iteration, messages)
 
 		if req.Stream {
 			resp, err = l.provider.ChatStream(ctx, chatReq, func(chunk providers.StreamChunk) {
@@ -441,11 +480,11 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 		}
 
 		if err != nil {
-			l.emitLLMSpan(ctx, llmSpanStart, iteration, messages, nil, err)
+			l.emitLLMSpanEnd(ctx, llmSpanID, llmSpanStart, nil, err)
 			return nil, fmt.Errorf("LLM call failed (iteration %d): %w", iteration, err)
 		}
 
-		l.emitLLMSpan(ctx, llmSpanStart, iteration, messages, resp, nil)
+		l.emitLLMSpanEnd(ctx, llmSpanID, llmSpanStart, resp, nil)
 
 		// For non-streaming responses, emit thinking and content as single events
 		if !req.Stream {
@@ -493,6 +532,12 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 
 			if promptTokens >= threshold {
 				midLoopCompacted = true
+				emitRun(AgentEvent{
+					Type:    protocol.AgentEventActivity,
+					AgentID: l.id,
+					RunID:   req.RunID,
+					Payload: map[string]any{"phase": "compacting", "iteration": iteration},
+				})
 				if compacted := l.compactMessagesInPlace(ctx, messages); compacted != nil {
 					messages = compacted
 				}
@@ -537,6 +582,17 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 					}
 				}
 			}
+			// Mid-run injection (Point B): drain all buffered user follow-up messages
+			// before exiting. If found, save current assistant response and continue
+			// the loop so the LLM can respond to the injected messages.
+			if forLLM, forSession := l.drainInjectChannel(req.InjectCh, emitRun); len(forLLM) > 0 {
+				messages = append(messages, providers.Message{Role: "assistant", Content: resp.Content})
+				messages = append(messages, forLLM...)
+				pendingMsgs = append(pendingMsgs, providers.Message{Role: "assistant", Content: resp.Content})
+				pendingMsgs = append(pendingMsgs, forSession...)
+				continue
+			}
+
 			finalContent = resp.Content
 			finalThinking = resp.Thinking
 			break
@@ -548,7 +604,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			Content:             resp.Content,
 			Thinking:            resp.Thinking, // reasoning_content passback for thinking models (Kimi, DeepSeek)
 			ToolCalls:           resp.ToolCalls,
-			Phase:               resp.Phase, // preserve Codex phase metadata (gpt-5.3-codex)
+			Phase:               resp.Phase,               // preserve Codex phase metadata (gpt-5.3-codex)
 			RawAssistantContent: resp.RawAssistantContent, // preserve thinking blocks for Anthropic passback
 		}
 		messages = append(messages, assistantMsg)
@@ -593,6 +649,25 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			continue // one more LLM call for summarization, then loop exits (no tool calls)
 		}
 
+		// Emit activity event: tool execution phase
+		if len(resp.ToolCalls) > 0 {
+			toolNames := make([]string, len(resp.ToolCalls))
+			for i, tc := range resp.ToolCalls {
+				toolNames[i] = tc.Name
+			}
+			emitRun(AgentEvent{
+				Type:    protocol.AgentEventActivity,
+				AgentID: l.id,
+				RunID:   req.RunID,
+				Payload: map[string]any{
+					"phase":     "tool_exec",
+					"tool":      toolNames[0],
+					"tools":     toolNames,
+					"iteration": iteration,
+				},
+			})
+		}
+
 		// Execute tool calls (parallel when multiple, sequential when single)
 		if len(resp.ToolCalls) == 1 {
 			// Single tool: sequential — no goroutine overhead
@@ -601,7 +676,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 				Type:    protocol.AgentEventToolCall,
 				AgentID: l.id,
 				RunID:   req.RunID,
-				Payload: map[string]interface{}{"name": tc.Name, "id": tc.ID, "arguments": truncateToolArgs(tc.Arguments, 500)},
+				Payload: map[string]any{"name": tc.Name, "id": tc.ID, "arguments": truncateToolArgs(tc.Arguments, 500)},
 			})
 
 			argsJSON, _ := json.Marshal(tc.Arguments)
@@ -610,6 +685,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			argsHash := loopDetector.record(tc.Name, tc.Arguments)
 
 			toolSpanStart := time.Now().UTC()
+			toolSpanID := l.emitToolSpanStart(ctx, toolSpanStart, tc.Name, tc.ID, string(argsJSON))
 			var result *tools.Result
 			if allowedTools != nil && !allowedTools[tc.Name] {
 				slog.Warn("security.tool_policy_blocked", "agent", l.id, "tool", tc.Name)
@@ -618,7 +694,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 				result = l.tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, req.Channel, req.ChatID, req.PeerKind, req.SessionKey, nil)
 			}
 
-			l.emitToolSpan(ctx, toolSpanStart, tc.Name, tc.ID, string(argsJSON), result)
+			l.emitToolSpanEnd(ctx, toolSpanID, toolSpanStart, result)
 
 			// Record result for loop detection.
 			loopDetector.recordResult(argsHash, result.ForLLM)
@@ -642,7 +718,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 				}
 			}
 
-			toolResultPayload := map[string]interface{}{
+			toolResultPayload := map[string]any{
 				"name":      tc.Name,
 				"id":        tc.ID,
 				"is_error":  result.IsError,
@@ -715,7 +791,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 					Type:    protocol.AgentEventToolCall,
 					AgentID: l.id,
 					RunID:   req.RunID,
-					Payload: map[string]interface{}{"name": tc.Name, "id": tc.ID, "arguments": truncateToolArgs(tc.Arguments, 500)},
+					Payload: map[string]any{"name": tc.Name, "id": tc.ID, "arguments": truncateToolArgs(tc.Arguments, 500)},
 				})
 			}
 
@@ -730,6 +806,9 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 					argsJSON, _ := json.Marshal(tc.Arguments)
 					slog.Info("tool call", "agent", l.id, "tool", tc.Name, "args_len", len(argsJSON), "parallel", true)
 					spanStart := time.Now().UTC()
+					// Emit running span inside goroutine — goroutine-safe (channel send only).
+					// End is also emitted here to prevent orphans on ctx cancellation.
+					spanID := l.emitToolSpanStart(ctx, spanStart, tc.Name, tc.ID, string(argsJSON))
 					var result *tools.Result
 					if allowedTools != nil && !allowedTools[tc.Name] {
 						slog.Warn("security.tool_policy_blocked", "agent", l.id, "tool", tc.Name)
@@ -737,6 +816,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 					} else {
 						result = l.tools.ExecuteWithContext(ctx, tc.Name, tc.Arguments, req.Channel, req.ChatID, req.PeerKind, req.SessionKey, nil)
 					}
+					l.emitToolSpanEnd(ctx, spanID, spanStart, result)
 					resultCh <- indexedResult{idx: idx, tc: tc, result: result, argsJSON: string(argsJSON), spanStart: spanStart}
 				}(i, tc)
 			}
@@ -756,9 +836,9 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 			})
 
 			// 5. Process results sequentially: emit events, append messages, save to session
+			// Note: tool span start/end already emitted inside goroutines above.
 			var loopStuck bool
 			for _, r := range collected {
-				l.emitToolSpan(ctx, r.spanStart, r.tc.Name, r.tc.ID, r.argsJSON, r.result)
 
 				// Record for loop detection.
 				argsHash := loopDetector.record(r.tc.Name, r.tc.Arguments)
@@ -783,7 +863,7 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 					}
 				}
 
-				parToolResultPayload := map[string]interface{}{
+				parToolResultPayload := map[string]any{
 					"name":      r.tc.Name,
 					"id":        r.tc.ID,
 					"is_error":  r.result.IsError,
@@ -843,13 +923,22 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 				break
 			}
 		}
+
+		// Mid-run injection (Point A): drain any user follow-up messages
+		// that arrived during tool execution. Append them after tool results
+		// so the next LLM call sees: [tool results...] + [user follow-ups...].
+		if forLLM, forSession := l.drainInjectChannel(req.InjectCh, emitRun); len(forLLM) > 0 {
+			messages = append(messages, forLLM...)
+			pendingMsgs = append(pendingMsgs, forSession...)
+		}
 	}
 
 	// 4. Full sanitization pipeline (matching TS extractAssistantText + sanitizeUserFacingText)
 	finalContent = SanitizeAssistantContent(finalContent)
 
-	// 4b. Config leak detection (predefined agents only)
-	finalContent = StripConfigLeak(finalContent, l.agentType)
+	// 4b. Config leak detection — disabled: too many false positives
+	// (e.g. agent explaining public architecture mentioning SOUL.md etc.)
+	// finalContent = StripConfigLeak(finalContent, l.agentType)
 
 	// 5. Handle NO_REPLY: save to session for context but mark as silent.
 	// Matching TS: NO_REPLY is saved (via resolveSilentReplyFallbackText) but
@@ -948,8 +1037,8 @@ func (l *Loop) runLoop(ctx context.Context, req RunRequest) (*RunResult, error) 
 }
 
 // truncateToolArgs returns a copy of arguments with string values truncated to maxLen.
-func truncateToolArgs(args map[string]interface{}, maxLen int) map[string]interface{} {
-	out := make(map[string]interface{}, len(args))
+func truncateToolArgs(args map[string]any, maxLen int) map[string]any {
+	out := make(map[string]any, len(args))
 	for k, v := range args {
 		if s, ok := v.(string); ok && len(s) > maxLen {
 			out[k] = truncateStr(s, maxLen)

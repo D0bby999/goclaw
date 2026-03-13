@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Brain, Plus, RefreshCw, Search, Database, Trash2, RotateCw } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -9,6 +10,7 @@ import { TableSkeleton } from "@/components/shared/loading-skeleton";
 import { Pagination } from "@/components/shared/pagination";
 import { ConfirmDialog } from "@/components/shared/confirm-dialog";
 import { useAgents } from "@/pages/agents/hooks/use-agents";
+import { useContactResolver } from "@/hooks/use-contact-resolver";
 import { useMemoryDocuments } from "./hooks/use-memory";
 import { MemoryDocumentDialog } from "./memory-document-dialog";
 import { MemoryCreateDialog } from "./memory-create-dialog";
@@ -18,6 +20,8 @@ import { useDeferredLoading } from "@/hooks/use-deferred-loading";
 import type { MemoryDocument } from "@/types/memory";
 
 export function MemoryPage() {
+  const { t } = useTranslation("memory");
+  const { t: tc } = useTranslation("common");
   const { agents } = useAgents();
   const [agentId, setAgentId] = useState("");
   const [userIdFilter, setUserIdFilter] = useState("");
@@ -51,6 +55,9 @@ export function MemoryPage() {
     }
     return Array.from(set).sort();
   }, [documents]);
+
+  // Resolve user IDs to display names via contacts API
+  const { resolve: resolveContact } = useContactResolver(userIds);
 
   // Build agent lookup map for displaying agent names in global view
   const agentMap = useMemo(() => {
@@ -98,22 +105,22 @@ export function MemoryPage() {
   return (
     <div className="p-4 sm:p-6">
       <PageHeader
-        title="Memory"
-        description="Browse and manage agent memory documents, chunks, and embeddings"
+        title={t("title")}
+        description={t("description")}
         actions={
           <div className="flex gap-2">
             {agentId && (
               <>
                 <Button size="sm" onClick={() => setSearchOpen(true)} className="gap-1" variant="outline">
-                  <Search className="h-3.5 w-3.5" /> Search
+                  <Search className="h-3.5 w-3.5" /> {t("search")}
                 </Button>
                 <Button size="sm" onClick={() => setCreateOpen(true)} className="gap-1">
-                  <Plus className="h-3.5 w-3.5" /> Create
+                  <Plus className="h-3.5 w-3.5" /> {t("create")}
                 </Button>
               </>
             )}
             <Button variant="outline" size="sm" onClick={() => refresh()} className="gap-1">
-              <RefreshCw className={"h-3.5 w-3.5" + (spinning ? " animate-spin" : "")} /> Refresh
+              <RefreshCw className={"h-3.5 w-3.5" + (spinning ? " animate-spin" : "")} /> {tc("refresh")}
             </Button>
           </div>
         }
@@ -122,14 +129,14 @@ export function MemoryPage() {
       {/* Filters */}
       <div className="mt-4 flex flex-wrap items-end gap-3">
         <div className="grid gap-1.5">
-          <Label htmlFor="mem-agent" className="text-xs">Agent</Label>
+          <Label htmlFor="mem-agent" className="text-xs">{t("filters.agent")}</Label>
           <select
             id="mem-agent"
             value={agentId}
             onChange={(e) => { setAgentId(e.target.value); setUserIdFilter(""); setPage(1); }}
             className="h-9 rounded-md border bg-background px-3 text-sm"
           >
-            <option value="">All agents</option>
+            <option value="">{t("filters.allAgents")}</option>
             {agents.map((a) => (
               <option key={a.id} value={a.id}>
                 {a.display_name || a.agent_key}
@@ -138,17 +145,17 @@ export function MemoryPage() {
           </select>
         </div>
         <div className="grid gap-1.5">
-          <Label htmlFor="mem-scope" className="text-xs">Scope</Label>
+          <Label htmlFor="mem-scope" className="text-xs">{t("filters.scope")}</Label>
           <select
             id="mem-scope"
             value={userIdFilter}
             onChange={(e) => { setUserIdFilter(e.target.value); setPage(1); }}
             className="h-9 rounded-md border bg-background px-3 text-sm min-w-[180px]"
           >
-            <option value="">All (global + personal)</option>
+            <option value="">{t("filters.allScope")}</option>
             {userIds.map((uid) => (
               <option key={uid} value={uid}>
-                {formatScopeLabel(uid)}
+                {formatScopeLabel(uid, resolveContact)}
               </option>
             ))}
           </select>
@@ -162,7 +169,7 @@ export function MemoryPage() {
             className="h-9 gap-1"
           >
             <Database className="h-3.5 w-3.5" />
-            {indexAllLoading ? "Indexing..." : "Index All"}
+            {indexAllLoading ? t("indexing") : t("indexAll")}
           </Button>
         )}
       </div>
@@ -174,20 +181,20 @@ export function MemoryPage() {
         ) : documents.length === 0 ? (
           <EmptyState
             icon={Brain}
-            title="No memory documents"
-            description={agentId ? "This agent has no memory documents yet." : "No memory documents found across any agent."}
+            title={t("emptyTitle")}
+            description={agentId ? t("emptyAgentDescription") : t("emptyGlobalDescription")}
           />
         ) : (
-          <div className="rounded-md border">
-            <table className="w-full text-sm">
+          <div className="overflow-x-auto rounded-md border">
+            <table className="w-full min-w-[600px] text-sm">
               <thead>
                 <tr className="border-b bg-muted/50">
-                  <th className="px-4 py-3 text-left font-medium">Path</th>
-                  {!agentId && <th className="px-4 py-3 text-left font-medium">Agent</th>}
-                  <th className="px-4 py-3 text-left font-medium">Scope</th>
-                  <th className="px-4 py-3 text-left font-medium">Hash</th>
-                  <th className="px-4 py-3 text-left font-medium">Updated</th>
-                  <th className="px-4 py-3 text-right font-medium">Actions</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("columns.path")}</th>
+                  {!agentId && <th className="px-4 py-3 text-left font-medium">{t("columns.agent")}</th>}
+                  <th className="px-4 py-3 text-left font-medium">{t("columns.scope")}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("columns.hash")}</th>
+                  <th className="px-4 py-3 text-left font-medium">{t("columns.updated")}</th>
+                  <th className="px-4 py-3 text-right font-medium">{t("columns.actions")}</th>
                 </tr>
               </thead>
               <tbody>
@@ -214,10 +221,10 @@ export function MemoryPage() {
                     )}
                     <td className="px-4 py-3">
                       <Badge variant={doc.user_id ? "secondary" : "outline"}>
-                        {doc.user_id ? "Personal" : "Global"}
+                        {doc.user_id ? t("scopeLabel.personal") : t("scopeLabel.global")}
                       </Badge>
                       {doc.user_id && (
-                        <span className="ml-1 text-xs text-muted-foreground">{formatScopeLabel(doc.user_id)}</span>
+                        <span className="ml-1 text-xs text-muted-foreground">{formatScopeLabel(doc.user_id, resolveContact)}</span>
                       )}
                     </td>
                     <td className="px-4 py-3 font-mono text-xs text-muted-foreground">
@@ -281,9 +288,9 @@ export function MemoryPage() {
       <ConfirmDialog
         open={!!deleteTarget}
         onOpenChange={(open) => !open && setDeleteTarget(null)}
-        title="Delete Memory Document"
-        description={`Are you sure you want to delete "${deleteTarget?.path}"? This will also delete all associated chunks and embeddings.`}
-        confirmLabel="Delete"
+        title={t("delete.title")}
+        description={t("delete.description", { path: deleteTarget?.path })}
+        confirmLabel={t("delete.confirmLabel")}
         variant="destructive"
         onConfirm={handleDelete}
         loading={deleteLoading}
@@ -292,8 +299,15 @@ export function MemoryPage() {
   );
 }
 
-/** Format user_id into a readable scope label (e.g. "group:telegram:-100xxx" -> "Telegram -100xxx") */
-function formatScopeLabel(userId: string): string {
+/** Format user_id into a readable scope label, preferring contact title if available. */
+function formatScopeLabel(userId: string, resolveContact?: (id: string) => { display_name?: string; username?: string } | null): string {
+  // Try contact resolver first
+  if (resolveContact) {
+    const contact = resolveContact(userId);
+    if (contact?.display_name) return contact.display_name;
+    if (contact?.username) return `@${contact.username}`;
+  }
+  // Fallback: format group IDs nicely
   if (userId.startsWith("group:")) {
     const parts = userId.split(":");
     if (parts.length >= 3) {

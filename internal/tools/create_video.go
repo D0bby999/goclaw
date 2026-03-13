@@ -43,19 +43,19 @@ func (t *CreateVideoTool) Description() string {
 	return "Generate a video from a text description using a video generation model. Returns a MEDIA: path to the generated video file."
 }
 
-func (t *CreateVideoTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *CreateVideoTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"prompt": map[string]interface{}{
+		"properties": map[string]any{
+			"prompt": map[string]any{
 				"type":        "string",
 				"description": "Text description of the video to generate.",
 			},
-			"duration": map[string]interface{}{
+			"duration": map[string]any{
 				"type":        "integer",
 				"description": "Video duration in seconds: 4, 6, or 8 (default 8).",
 			},
-			"aspect_ratio": map[string]interface{}{
+			"aspect_ratio": map[string]any{
 				"type":        "string",
 				"description": "Aspect ratio: '16:9' (default) or '9:16'.",
 			},
@@ -64,7 +64,7 @@ func (t *CreateVideoTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *CreateVideoTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+func (t *CreateVideoTool) Execute(ctx context.Context, args map[string]any) *Result {
 	prompt, _ := args["prompt"].(string)
 	if prompt == "" {
 		return ErrorResult("prompt is required")
@@ -140,6 +140,9 @@ func (t *CreateVideoTool) Execute(ctx context.Context, args map[string]interface
 
 // callProvider dispatches to the correct video generation implementation based on provider type.
 func (t *CreateVideoTool) callProvider(ctx context.Context, cp credentialProvider, providerName, model string, params map[string]any) ([]byte, *providers.Usage, error) {
+	if cp == nil {
+		return nil, nil, fmt.Errorf("provider %q does not expose API credentials required for video generation", providerName)
+	}
 	prompt := GetParamString(params, "prompt", "")
 	duration := GetParamInt(params, "duration", 8)
 	aspectRatio := GetParamString(params, "aspect_ratio", "16:9")
@@ -147,7 +150,7 @@ func (t *CreateVideoTool) callProvider(ctx context.Context, cp credentialProvide
 	slog.Info("create_video: calling video generation API",
 		"provider", providerName, "model", model, "duration", duration, "aspect_ratio", aspectRatio)
 
-	switch ProviderTypeFromName(providerName) {
+	switch GetParamString(params, "_provider_type", providerTypeFromName(providerName)) {
 	case "gemini":
 		return t.callGeminiVideoGen(ctx, cp.APIKey(), cp.APIBase(), model, prompt, duration, aspectRatio, params)
 	case "minimax":
@@ -166,11 +169,11 @@ func (t *CreateVideoTool) callGeminiVideoGen(ctx context.Context, apiKey, apiBas
 	// 1. Start long-running video generation.
 	predictURL := fmt.Sprintf("%s/models/%s:predictLongRunning", nativeBase, model)
 
-	body := map[string]interface{}{
-		"instances": []map[string]interface{}{
+	body := map[string]any{
+		"instances": []map[string]any{
 			{"prompt": prompt},
 		},
-		"parameters": map[string]interface{}{
+		"parameters": map[string]any{
 			"aspectRatio":      aspectRatio,
 			"durationSeconds":  duration,
 			"personGeneration": GetParamString(params, "person_generation", "allow_all"),
@@ -223,7 +226,7 @@ func (t *CreateVideoTool) callGeminiVideoGen(ctx context.Context, apiKey, apiBas
 	const pollInterval = 10 * time.Second
 
 	var doneBody []byte
-	for i := 0; i < maxPolls; i++ {
+	for i := range maxPolls {
 		select {
 		case <-ctx.Done():
 			return nil, nil, ctx.Err()
@@ -326,9 +329,9 @@ func (t *CreateVideoTool) callGeminiVideoGen(ctx context.Context, apiKey, apiBas
 
 // callChatVideoGen tries OpenAI-compatible chat completions with video modality.
 func (t *CreateVideoTool) callChatVideoGen(ctx context.Context, apiKey, apiBase, model, prompt string, duration int, aspectRatio string) ([]byte, *providers.Usage, error) {
-	body := map[string]interface{}{
+	body := map[string]any{
 		"model": model,
-		"messages": []map[string]interface{}{
+		"messages": []map[string]any{
 			{"role": "user", "content": prompt},
 		},
 		"modalities":   []string{"video", "text"},
@@ -368,7 +371,7 @@ func (t *CreateVideoTool) callChatVideoGen(ctx context.Context, apiKey, apiBase,
 	var chatResp struct {
 		Choices []struct {
 			Message struct {
-				Content interface{} `json:"content"`
+				Content any `json:"content"`
 			} `json:"message"`
 		} `json:"choices"`
 		Usage *struct {
@@ -386,11 +389,11 @@ func (t *CreateVideoTool) callChatVideoGen(ctx context.Context, apiKey, apiBase,
 	}
 
 	// Look for video data URL in multipart content.
-	if parts, ok := chatResp.Choices[0].Message.Content.([]interface{}); ok {
+	if parts, ok := chatResp.Choices[0].Message.Content.([]any); ok {
 		for _, part := range parts {
-			if m, ok := part.(map[string]interface{}); ok {
+			if m, ok := part.(map[string]any); ok {
 				if m["type"] == "video_url" || m["type"] == "image_url" {
-					if vidURL, ok := m["video_url"].(map[string]interface{}); ok {
+					if vidURL, ok := m["video_url"].(map[string]any); ok {
 						if urlStr, ok := vidURL["url"].(string); ok {
 							if videoBytes, err := decodeDataURL(urlStr); err == nil {
 								return videoBytes, convertUsage(chatResp.Usage), nil

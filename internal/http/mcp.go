@@ -8,6 +8,7 @@ import (
 	"github.com/google/uuid"
 
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
 )
@@ -75,44 +76,62 @@ func (h *MCPHandler) auth(next http.HandlerFunc) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		if h.token != "" {
 			if extractBearerToken(r) != h.token {
-				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": "unauthorized"})
+				locale := extractLocale(r)
+				writeJSON(w, http.StatusUnauthorized, map[string]string{"error": i18n.T(locale, i18n.MsgUnauthorized)})
 				return
 			}
 		}
 		userID := extractUserID(r)
+		ctx := store.WithLocale(r.Context(), extractLocale(r))
 		if userID != "" {
-			ctx := store.WithUserID(r.Context(), userID)
-			r = r.WithContext(ctx)
+			ctx = store.WithUserID(ctx, userID)
 		}
+		r = r.WithContext(ctx)
 		next(w, r)
 	}
 }
 
 // --- Server CRUD ---
 
+// mcpServerWithCounts extends MCPServerData with agent grant count for list responses.
+type mcpServerWithCounts struct {
+	store.MCPServerData
+	AgentCount int `json:"agent_count"`
+}
+
 func (h *MCPHandler) handleListServers(w http.ResponseWriter, r *http.Request) {
 	servers, err := h.store.ListServers(r.Context())
 	if err != nil {
 		slog.Error("mcp.list_servers", "error", err)
-		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": "failed to list servers"})
+		locale := store.LocaleFromContext(r.Context())
+		writeJSON(w, http.StatusInternalServerError, map[string]string{"error": i18n.T(locale, i18n.MsgFailedToList, "servers")})
 		return
 	}
-	writeJSON(w, http.StatusOK, map[string]interface{}{"servers": servers})
+
+	// Enrich with agent grant counts
+	counts, _ := h.store.CountAgentGrantsByServer(r.Context())
+	result := make([]mcpServerWithCounts, len(servers))
+	for i, srv := range servers {
+		result[i] = mcpServerWithCounts{MCPServerData: srv, AgentCount: counts[srv.ID]}
+	}
+
+	writeJSON(w, http.StatusOK, map[string]interface{}{"servers": result})
 }
 
 func (h *MCPHandler) handleCreateServer(w http.ResponseWriter, r *http.Request) {
+	locale := store.LocaleFromContext(r.Context())
 	var srv store.MCPServerData
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&srv); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidJSON)})
 		return
 	}
 
 	if srv.Name == "" || srv.Transport == "" {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name and transport are required"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgRequired, "name and transport")})
 		return
 	}
 	if !isValidSlug(srv.Name) {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name must be a valid slug (lowercase letters, numbers, hyphens only)"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidSlug, "name")})
 		return
 	}
 
@@ -128,19 +147,21 @@ func (h *MCPHandler) handleCreateServer(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h.emitCacheInvalidate()
+	emitAudit(h.msgBus, r, "mcp_server.created", "mcp_server", srv.ID.String())
 	writeJSON(w, http.StatusCreated, srv)
 }
 
 func (h *MCPHandler) handleGetServer(w http.ResponseWriter, r *http.Request) {
+	locale := store.LocaleFromContext(r.Context())
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid server ID"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidID, "server")})
 		return
 	}
 
 	srv, err := h.store.GetServer(r.Context(), id)
 	if err != nil {
-		writeJSON(w, http.StatusNotFound, map[string]string{"error": "server not found"})
+		writeJSON(w, http.StatusNotFound, map[string]string{"error": i18n.T(locale, i18n.MsgNotFound, "server", id.String())})
 		return
 	}
 
@@ -148,21 +169,22 @@ func (h *MCPHandler) handleGetServer(w http.ResponseWriter, r *http.Request) {
 }
 
 func (h *MCPHandler) handleUpdateServer(w http.ResponseWriter, r *http.Request) {
+	locale := store.LocaleFromContext(r.Context())
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid server ID"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidID, "server")})
 		return
 	}
 
 	var updates map[string]interface{}
 	if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 1<<20)).Decode(&updates); err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid JSON"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidJSON)})
 		return
 	}
 
 	if name, ok := updates["name"]; ok {
 		if s, _ := name.(string); !isValidSlug(s) {
-			writeJSON(w, http.StatusBadRequest, map[string]string{"error": "name must be a valid slug (lowercase letters, numbers, hyphens only)"})
+			writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidSlug, "name")})
 			return
 		}
 	}
@@ -174,13 +196,15 @@ func (h *MCPHandler) handleUpdateServer(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h.emitCacheInvalidate()
+	emitAudit(h.msgBus, r, "mcp_server.updated", "mcp_server", id.String())
 	writeJSON(w, http.StatusOK, map[string]string{"status": "updated"})
 }
 
 func (h *MCPHandler) handleDeleteServer(w http.ResponseWriter, r *http.Request) {
+	locale := store.LocaleFromContext(r.Context())
 	id, err := uuid.Parse(r.PathValue("id"))
 	if err != nil {
-		writeJSON(w, http.StatusBadRequest, map[string]string{"error": "invalid server ID"})
+		writeJSON(w, http.StatusBadRequest, map[string]string{"error": i18n.T(locale, i18n.MsgInvalidID, "server")})
 		return
 	}
 
@@ -191,6 +215,6 @@ func (h *MCPHandler) handleDeleteServer(w http.ResponseWriter, r *http.Request) 
 	}
 
 	h.emitCacheInvalidate()
+	emitAudit(h.msgBus, r, "mcp_server.deleted", "mcp_server", id.String())
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
-

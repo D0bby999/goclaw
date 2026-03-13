@@ -79,7 +79,7 @@ func (s *PGMemoryStore) GetDocumentDetail(ctx context.Context, agentID, userID, 
 	aid := mustParseUUID(agentID)
 
 	var q string
-	var args []interface{}
+	var args []any
 	if userID == "" {
 		q = `SELECT d.path, d.content, d.hash, d.user_id, d.created_at, d.updated_at,
 				COUNT(c.id) AS chunk_count,
@@ -88,7 +88,7 @@ func (s *PGMemoryStore) GetDocumentDetail(ctx context.Context, agentID, userID, 
 			 LEFT JOIN memory_chunks c ON c.document_id = d.id
 			 WHERE d.agent_id = $1 AND d.path = $2 AND d.user_id IS NULL
 			 GROUP BY d.id`
-		args = []interface{}{aid, path}
+		args = []any{aid, path}
 	} else {
 		q = `SELECT d.path, d.content, d.hash, d.user_id, d.created_at, d.updated_at,
 				COUNT(c.id) AS chunk_count,
@@ -97,7 +97,7 @@ func (s *PGMemoryStore) GetDocumentDetail(ctx context.Context, agentID, userID, 
 			 LEFT JOIN memory_chunks c ON c.document_id = d.id
 			 WHERE d.agent_id = $1 AND d.path = $2 AND d.user_id = $3
 			 GROUP BY d.id`
-		args = []interface{}{aid, path, userID}
+		args = []any{aid, path, userID}
 	}
 
 	var detail store.DocumentDetail
@@ -124,25 +124,25 @@ func (s *PGMemoryStore) ListChunks(ctx context.Context, agentID, userID, path st
 	aid := mustParseUUID(agentID)
 
 	var q string
-	var args []interface{}
+	var args []any
 	if userID == "" {
 		q = `SELECT c.id, c.start_line, c.end_line,
-				LEFT(c.text, 200) AS text_preview,
+				c.text AS text_preview,
 				(c.embedding IS NOT NULL) AS has_embedding
 			 FROM memory_chunks c
 			 JOIN memory_documents d ON c.document_id = d.id
 			 WHERE d.agent_id = $1 AND d.path = $2 AND d.user_id IS NULL
 			 ORDER BY c.start_line`
-		args = []interface{}{aid, path}
+		args = []any{aid, path}
 	} else {
 		q = `SELECT c.id, c.start_line, c.end_line,
-				LEFT(c.text, 200) AS text_preview,
+				c.text AS text_preview,
 				(c.embedding IS NOT NULL) AS has_embedding
 			 FROM memory_chunks c
 			 JOIN memory_documents d ON c.document_id = d.id
 			 WHERE d.agent_id = $1 AND d.path = $2 AND d.user_id = $3
 			 ORDER BY c.start_line`
-		args = []interface{}{aid, path, userID}
+		args = []any{aid, path, userID}
 	}
 
 	rows, err := s.db.QueryContext(ctx, q, args...)

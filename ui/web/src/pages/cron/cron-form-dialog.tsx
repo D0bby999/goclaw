@@ -195,7 +195,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
           </div>
 
           <div className="space-y-2">
-            <Label>Schedule Type</Label>
+            <Label>{t("create.scheduleType")}</Label>
             <div className="flex gap-2">
               {(["every", "cron", "at"] as const).map((kind) => (
                 <Button
@@ -204,7 +204,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
                   size="sm"
                   onClick={() => setScheduleKind(kind)}
                 >
-                  {kind === "every" ? "Every" : kind === "cron" ? "Cron" : "Once"}
+                  {kind === "every" ? t("create.every") : kind === "cron" ? t("create.cron") : t("create.once")}
                 </Button>
               ))}
             </div>
@@ -212,7 +212,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
 
           {scheduleKind === "every" && (
             <div className="space-y-2">
-              <Label>Interval (seconds)</Label>
+              <Label>{t("create.intervalSeconds")}</Label>
               <Input
                 type="number"
                 min={1}
@@ -225,28 +225,28 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
 
           {scheduleKind === "cron" && (
             <div className="space-y-2">
-              <Label>Cron Expression</Label>
+              <Label>{t("create.cronExpression")}</Label>
               <Input
                 value={cronExpr}
                 onChange={(e) => setCronExpr(e.target.value)}
                 placeholder="0 * * * *"
               />
-              <p className="text-xs text-muted-foreground">Standard 5-field cron: min hour day month weekday</p>
+              <p className="text-xs text-muted-foreground">{t("create.cronHint")}</p>
             </div>
           )}
 
           {scheduleKind === "at" && (
             <p className="text-sm text-muted-foreground">
-              The job will run once, approximately 1 minute from now.
+              {t("create.onceDesc")}
             </p>
           )}
 
           <div className="space-y-2">
-            <Label>Message</Label>
+            <Label>{t("create.message")}</Label>
             <Textarea
               value={message}
               onChange={(e) => setMessage(e.target.value)}
-              placeholder="What should the agent do?"
+              placeholder={t("create.messagePlaceholder")}
               rows={3}
             />
           </div>
@@ -298,7 +298,7 @@ export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFo
         </div>
         <DialogFooter>
           <Button variant="outline" onClick={() => onOpenChange(false)} disabled={saving}>
-            Cancel
+            {t("create.cancel")}
           </Button>
           <Button onClick={handleSubmit} disabled={saving || !name.trim() || (!isEdit && !isValidSlug(name.trim())) || !message.trim()}>
             {saving ? (isEdit ? "Saving..." : "Creating...") : (isEdit ? "Save" : "Create")}

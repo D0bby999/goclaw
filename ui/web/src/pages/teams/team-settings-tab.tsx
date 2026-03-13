@@ -1,8 +1,10 @@
 import { useState, useEffect, useCallback } from "react";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
+import { Switch } from "@/components/ui/switch";
 import { Combobox } from "@/components/ui/combobox";
-import { X, Save, Check } from "lucide-react";
+import { X, Save, Check, Bell } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { CHANNEL_TYPES } from "@/constants/channels";
 import type { TeamData, TeamAccessSettings } from "@/types/team";
 import { useTeams } from "./hooks/use-teams";
@@ -57,6 +59,7 @@ function MultiSelect({
 }
 
 export function TeamSettingsTab({ teamId, team, onSaved }: TeamSettingsTabProps) {
+  const { t } = useTranslation("teams");
   const { updateTeamSettings, getKnownUsers } = useTeams();
   const [knownUsers, setKnownUsers] = useState<string[]>([]);
 
@@ -105,11 +108,11 @@ export function TeamSettingsTab({ teamId, team, onSaved }: TeamSettingsTabProps)
       onSaved();
       setTimeout(() => setSaved(false), 3000);
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to save");
+      setError(err instanceof Error ? err.message : t("settings.failedSave"));
     } finally {
       setSaving(false);
     }
-  }, [teamId, allowUserIds, denyUserIds, allowChannels, denyChannels, progressNotifications, updateTeamSettings, onSaved]);
+  }, [teamId, allowUserIds, denyUserIds, allowChannels, denyChannels, progressNotifications, updateTeamSettings, onSaved, t]);
 
   const userOptions = knownUsers.map((u) => ({ value: u, label: u }));
   const channelOptions = CHANNEL_TYPES.map((c) => ({ value: c.value, label: c.label }));
@@ -118,30 +121,30 @@ export function TeamSettingsTab({ teamId, team, onSaved }: TeamSettingsTabProps)
     <div className="space-y-6">
       {/* User Access Control */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium">User Access Control</h3>
+        <h3 className="text-sm font-medium">{t("settings.userAccessControl")}</h3>
         <div className="space-y-3 rounded-lg border p-4">
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Allowed Users</label>
+            <label className="text-sm font-medium">{t("settings.allowedUsers")}</label>
             <p className="text-xs text-muted-foreground">
-              If set, only these users can trigger team workflows. Empty = all allowed.
+              {t("settings.allowedUsersHint")}
             </p>
             <MultiSelect
               options={userOptions}
               selected={allowUserIds}
               onChange={setAllowUserIds}
-              placeholder="Search users..."
+              placeholder={t("settings.searchUsers")}
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Denied Users</label>
+            <label className="text-sm font-medium">{t("settings.deniedUsers")}</label>
             <p className="text-xs text-muted-foreground">
-              Always blocked, overrides allow list.
+              {t("settings.deniedUsersHint")}
             </p>
             <MultiSelect
               options={userOptions}
               selected={denyUserIds}
               onChange={setDenyUserIds}
-              placeholder="Search users..."
+              placeholder={t("settings.searchUsers")}
             />
           </div>
         </div>
@@ -149,30 +152,30 @@ export function TeamSettingsTab({ teamId, team, onSaved }: TeamSettingsTabProps)
 
       {/* Channel Restrictions */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium">Channel Restrictions</h3>
+        <h3 className="text-sm font-medium">{t("settings.channelRestrictions")}</h3>
         <div className="space-y-3 rounded-lg border p-4">
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Allowed Channels</label>
+            <label className="text-sm font-medium">{t("settings.allowedChannels")}</label>
             <p className="text-xs text-muted-foreground">
-              If set, only these channels can activate team workflows. Empty = all allowed.
+              {t("settings.allowedChannelsHint")}
             </p>
             <MultiSelect
               options={channelOptions}
               selected={allowChannels}
               onChange={setAllowChannels}
-              placeholder="Select channel..."
+              placeholder={t("settings.selectChannel")}
             />
           </div>
           <div className="space-y-1.5">
-            <label className="text-sm font-medium">Denied Channels</label>
+            <label className="text-sm font-medium">{t("settings.deniedChannels")}</label>
             <p className="text-xs text-muted-foreground">
-              Messages from these channels are always blocked.
+              {t("settings.deniedChannelsHint")}
             </p>
             <MultiSelect
               options={channelOptions}
               selected={denyChannels}
               onChange={setDenyChannels}
-              placeholder="Select channel..."
+              placeholder={t("settings.selectChannel")}
             />
           </div>
         </div>
@@ -180,22 +183,25 @@ export function TeamSettingsTab({ teamId, team, onSaved }: TeamSettingsTabProps)
 
       {/* Notifications */}
       <div className="space-y-4">
-        <h3 className="text-sm font-medium">Notifications</h3>
-        <div className="rounded-lg border p-4">
-          <label className="flex items-center gap-3 cursor-pointer">
-            <input
-              type="checkbox"
-              checked={progressNotifications}
-              onChange={(e) => setProgressNotifications(e.target.checked)}
-              className="h-4 w-4 rounded border-input"
-            />
-            <div>
-              <span className="text-sm font-medium">Progress notifications</span>
-              <p className="text-xs text-muted-foreground">
-                Send periodic "Your team is working on it..." messages to chat during async delegations.
+        <h3 className="text-sm font-medium">{t("settings.notifications")}</h3>
+        <div className="rounded-lg border bg-gradient-to-r from-blue-500/5 to-purple-500/5 p-4">
+          <div className="flex items-start gap-4">
+            <div className="rounded-lg bg-blue-500/10 p-2.5 text-blue-600 dark:text-blue-400">
+              <Bell className="h-5 w-5" />
+            </div>
+            <div className="flex-1 space-y-1">
+              <div className="flex items-center justify-between">
+                <span className="text-sm font-semibold">{t("settings.progressNotifications")}</span>
+                <Switch
+                  checked={progressNotifications}
+                  onCheckedChange={setProgressNotifications}
+                />
+              </div>
+              <p className="text-xs text-muted-foreground leading-relaxed">
+                {t("settings.progressNotificationsHint")}
               </p>
             </div>
-          </label>
+          </div>
         </div>
       </div>
 
@@ -203,14 +209,14 @@ export function TeamSettingsTab({ teamId, team, onSaved }: TeamSettingsTabProps)
       <div className="flex items-center gap-3">
         <Button onClick={handleSave} disabled={saving} className="gap-2">
           {saving ? (
-            "Saving..."
+            t("settings.saving")
           ) : saved ? (
             <>
-              <Check className="h-4 w-4" /> Saved
+              <Check className="h-4 w-4" /> {t("settings.saved")}
             </>
           ) : (
             <>
-              <Save className="h-4 w-4" /> Save Settings
+              <Save className="h-4 w-4" /> {t("settings.save")}
             </>
           )}
         </Button>

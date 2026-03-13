@@ -25,7 +25,7 @@ const (
 	// mcpToolInlineMaxCount is the threshold above which MCP tools switch
 	// to search mode (deferred loading via mcp_tool_search) instead of
 	// being registered inline in the tool registry.
-	mcpToolInlineMaxCount = 30
+	mcpToolInlineMaxCount = 40
 )
 
 // ServerStatus reports the connection status of an MCP server.
@@ -72,7 +72,7 @@ type Manager struct {
 	// DB-backed servers
 	store store.MCPServerStore
 
-	// Shared connection pool (nil = standalone mode)
+	// Shared connection pool (nil = config-only mode)
 	pool          *Pool
 	poolServers   map[string]struct{}  // server names acquired from pool (for cleanup)
 	poolToolNames map[string][]string  // per-agent tool names for pool-backed servers
@@ -179,7 +179,7 @@ func (m *Manager) LoadForAgent(ctx context.Context, agentID uuid.UUID, userID st
 				continue
 			}
 		} else {
-			// Standalone mode: create per-agent connection
+			// Per-agent mode: create per-agent connection
 			if err := m.connectServer(ctx, srv.Name, srv.Transport, srv.Command,
 				args, env, srv.URL, headers,
 				srv.ToolPrefix, srv.TimeoutSec); err != nil {

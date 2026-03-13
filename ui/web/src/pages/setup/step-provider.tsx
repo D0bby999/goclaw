@@ -1,4 +1,5 @@
 import { useState, useMemo } from "react";
+import { useTranslation } from "react-i18next";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
@@ -14,28 +15,40 @@ import {
 } from "@/components/ui/select";
 import { PROVIDER_TYPES } from "@/constants/providers";
 import { useProviders } from "@/pages/providers/hooks/use-providers";
+import { CLISection } from "@/pages/providers/provider-cli-section";
 import { slugify } from "@/lib/slug";
-import type { ProviderData } from "@/types/provider";
+import type { ProviderData, ProviderInput } from "@/types/provider";
 
 interface StepProviderProps {
   onComplete: (provider: ProviderData) => void;
+  existingProvider?: ProviderData | null;
 }
 
-export function StepProvider({ onComplete }: StepProviderProps) {
-  const { createProvider } = useProviders();
+export function StepProvider({ onComplete, existingProvider }: StepProviderProps) {
+  const { t } = useTranslation("setup");
+  const { createProvider, updateProvider } = useProviders();
 
-  const [providerType, setProviderType] = useState("openrouter");
-  const [name, setName] = useState("openrouter");
+  const isEditing = !!existingProvider;
+
+  const [providerType, setProviderType] = useState(existingProvider?.provider_type ?? "openrouter");
+  const [name, setName] = useState(existingProvider?.name ?? "openrouter");
   const [apiKey, setApiKey] = useState("");
-  const [apiBase, setApiBase] = useState("https://openrouter.ai/api/v1");
+  const [apiBase, setApiBase] = useState(
+    existingProvider?.api_base ?? "https://openrouter.ai/api/v1",
+  );
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
+
+  const isCLI = providerType === "claude_cli";
+  // Local Ollama uses no API key — the server accepts any non-empty Bearer value internally
+  const isOllama = providerType === "ollama";
 
   const handleTypeChange = (value: string) => {
     setProviderType(value);
     const preset = PROVIDER_TYPES.find((t) => t.value === value);
     setName(slugify(value));
     setApiBase(preset?.apiBase || "");
+    setApiKey("");
     setError("");
   };
 
@@ -46,21 +59,33 @@ export function StepProvider({ onComplete }: StepProviderProps) {
     [providerType],
   );
 
-  const handleCreate = async () => {
-    if (!apiKey.trim()) { setError("API key is required"); return; }
+  const handleSubmit = async () => {
+    if (!isEditing && !isCLI && !isOllama && !apiKey.trim()) { setError(t("provider.errors.apiKeyRequired")); return; }
     setLoading(true);
     setError("");
     try {
-      const provider = await createProvider({
-        name: name.trim(),
-        provider_type: providerType,
-        api_base: apiBase.trim() || undefined,
-        api_key: apiKey.trim(),
-        enabled: true,
-      }) as ProviderData;
-      onComplete(provider);
+      if (isEditing) {
+        const patch: Record<string, unknown> = {
+          name: name.trim(),
+          provider_type: providerType,
+          api_base: apiBase.trim() || undefined,
+        };
+        // Only include api_key if user entered a new one
+        if (apiKey.trim()) patch.api_key = apiKey.trim();
+        await updateProvider(existingProvider!.id, patch as Partial<ProviderInput>);
+        onComplete({ ...existingProvider!, ...patch } as ProviderData);
+      } else {
+        const provider = await createProvider({
+          name: name.trim(),
+          provider_type: providerType,
+          api_base: apiBase.trim() || undefined,
+          api_key: isCLI || isOllama ? undefined : apiKey.trim(),
+          enabled: true,
+        }) as ProviderData;
+        onComplete(provider);
+      }
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Failed to create provider");
+      setError(err instanceof Error ? err.message : t("provider.errors.failedCreate"));
     } finally {
       setLoading(false);
     }
@@ -71,17 +96,19 @@ export function StepProvider({ onComplete }: StepProviderProps) {
       <CardContent className="space-y-4 pt-6">
         <TooltipProvider>
           <div className="space-y-1">
-            <h2 className="text-lg font-semibold">Configure LLM Provider</h2>
+            <h2 className="text-lg font-semibold">{t("provider.title")}</h2>
             <p className="text-sm text-muted-foreground">
-              Connect to an AI provider to power your agents. You'll need an API key.
+              {isCLI
+                ? t("provider.descriptionCli")
+                : t("provider.description")}
             </p>
           </div>
 
           <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <div className="space-y-2">
               <Label className="inline-flex items-center gap-1.5">
-                Provider Type
-                <InfoTip text="The LLM service you want to connect. OpenRouter is recommended for access to multiple models." />
+                {t("provider.providerType")}
+                <InfoTip text={t("provider.providerTypeHint")} />
               </Label>
               <Select value={providerType} onValueChange={handleTypeChange}>
                 <SelectTrigger><SelectValue /></SelectTrigger>
@@ -94,43 +121,51 @@ export function StepProvider({ onComplete }: StepProviderProps) {
             </div>
             <div className="space-y-2">
               <Label className="inline-flex items-center gap-1.5">
-                Name
-                <InfoTip text="Internal identifier for this provider. Auto-generated from provider type." />
+                {t("provider.name")}
+                <InfoTip text={t("provider.nameHint")} />
               </Label>
               <Input value={name} onChange={(e) => setName(slugify(e.target.value))} />
             </div>
           </div>
 
-          <div className="space-y-2">
-            <Label className="inline-flex items-center gap-1.5">
-              API Key *
-              <InfoTip text="Your provider's secret key. Encrypted server-side and never exposed in API responses." />
-            </Label>
-            <Input
-              type="password"
-              value={apiKey}
-              onChange={(e) => setApiKey(e.target.value)}
-              placeholder="sk-..."
-            />
-          </div>
+          {isCLI ? (
+            <CLISection open={true} />
+          ) : (
+            <>
+              <div className="space-y-2">
+                <Label className="inline-flex items-center gap-1.5">
+                  {t("provider.apiKey")}
+                  <InfoTip text={t("provider.apiKeyHint")} />
+                </Label>
+                <Input
+                  type="password"
+                  value={apiKey}
+                  onChange={(e) => setApiKey(e.target.value)}
+                  placeholder="sk-..."
+                />
+              </div>
 
-          <div className="space-y-2">
-            <Label className="inline-flex items-center gap-1.5">
-              API Base URL
-              <InfoTip text="The endpoint URL for API requests. Auto-filled based on provider type. Override only if using a custom proxy." />
-            </Label>
-            <Input
-              value={apiBase}
-              onChange={(e) => setApiBase(e.target.value)}
-              placeholder={apiBasePlaceholder}
-            />
-          </div>
+              <div className="space-y-2">
+                <Label className="inline-flex items-center gap-1.5">
+                  {t("provider.apiBase")}
+                  <InfoTip text={t("provider.apiBaseHint")} />
+                </Label>
+                <Input
+                  value={apiBase}
+                  onChange={(e) => setApiBase(e.target.value)}
+                  placeholder={apiBasePlaceholder}
+                />
+              </div>
+            </>
+          )}
 
           {error && <p className="text-sm text-destructive">{error}</p>}
 
           <div className="flex justify-end">
-            <Button onClick={handleCreate} disabled={loading || !apiKey.trim()}>
-              {loading ? "Creating..." : "Create Provider"}
+            <Button onClick={handleSubmit} disabled={loading || (!isEditing && !isCLI && !isOllama && !apiKey.trim())}>
+              {loading
+                ? isEditing ? t("provider.updating", "Updating...") : t("provider.creating")
+                : isEditing ? t("provider.update", "Update") : t("provider.create")}
             </Button>
           </div>
         </TooltipProvider>

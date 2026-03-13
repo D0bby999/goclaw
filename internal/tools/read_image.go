@@ -51,11 +51,11 @@ func (t *ReadImageTool) Description() string {
 	return "Analyze images attached to the current message using a vision model. Use this when you see <media:image> tags but cannot view images directly."
 }
 
-func (t *ReadImageTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ReadImageTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"prompt": map[string]interface{}{
+		"properties": map[string]any{
+			"prompt": map[string]any{
 				"type":        "string",
 				"description": "What you want to know about the image(s). E.g. 'Describe this image in detail' or 'What text is in this image?'",
 			},
@@ -64,7 +64,7 @@ func (t *ReadImageTool) Parameters() map[string]interface{} {
 	}
 }
 
-func (t *ReadImageTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+func (t *ReadImageTool) Execute(ctx context.Context, args map[string]any) *Result {
 	prompt, _ := args["prompt"].(string)
 	if prompt == "" {
 		prompt = "Describe this image in detail."
@@ -75,14 +75,7 @@ func (t *ReadImageTool) Execute(ctx context.Context, args map[string]interface{}
 		return ErrorResult("No images available in this conversation. The user may not have sent an image.")
 	}
 
-	// Extract per-agent config for backward compat
-	var perAgentProvider, perAgentModel string
-	if cfg := VisionConfigFromCtx(ctx); cfg != nil {
-		perAgentProvider = cfg.Provider
-		perAgentModel = cfg.Model
-	}
-
-	chain := ResolveMediaProviderChain(ctx, "read_image", perAgentProvider, perAgentModel,
+	chain := ResolveMediaProviderChain(ctx, "read_image", "", "",
 		visionProviderPriority, visionModelDefaults, t.registry)
 
 	// Inject prompt and images into each chain entry's params
@@ -128,7 +121,7 @@ func (t *ReadImageTool) callProvider(ctx context.Context, cp credentialProvider,
 			},
 		},
 		Model: model,
-		Options: map[string]interface{}{
+		Options: map[string]any{
 			"max_tokens":  1024,
 			"temperature": 0.3,
 		},

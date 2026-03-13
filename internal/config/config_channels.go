@@ -1,20 +1,33 @@
 package config
 
+// PendingCompactionConfig configures LLM-based compaction of pending group messages.
+// When a group accumulates more than Threshold pending messages, older messages are
+// summarized by an LLM and replaced with a compact summary, keeping KeepRecent raw messages.
+type PendingCompactionConfig struct {
+	Threshold  int    `json:"threshold,omitempty"`   // trigger compaction when entries exceed this (default 50)
+	KeepRecent int    `json:"keep_recent,omitempty"` // keep this many recent raw messages after compaction (default 15)
+	MaxTokens  int    `json:"max_tokens,omitempty"`  // max output tokens for LLM summarization (default 4096)
+	Provider   string `json:"provider,omitempty"`    // LLM provider name (e.g. "openai"); empty = use agent's provider
+	Model      string `json:"model,omitempty"`       // model for summarization; empty = use agent's model
+}
+
 // ChannelsConfig contains per-channel configuration.
 type ChannelsConfig struct {
-	Telegram     TelegramConfig     `json:"telegram"`
-	Discord      DiscordConfig      `json:"discord"`
-	Slack        SlackConfig        `json:"slack"`
-	WhatsApp     WhatsAppConfig     `json:"whatsapp"`
-	Zalo         ZaloConfig         `json:"zalo"`
-	ZaloPersonal ZaloPersonalConfig `json:"zalo_personal"`
-	Feishu       FeishuConfig       `json:"feishu"`
+	Telegram          TelegramConfig           `json:"telegram"`
+	Discord           DiscordConfig            `json:"discord"`
+	Slack             SlackConfig              `json:"slack"`
+	WhatsApp          WhatsAppConfig           `json:"whatsapp"`
+	Zalo              ZaloConfig               `json:"zalo"`
+	ZaloPersonal      ZaloPersonalConfig       `json:"zalo_personal"`
+	Feishu            FeishuConfig             `json:"feishu"`
+	PendingCompaction *PendingCompactionConfig `json:"pending_compaction,omitempty"` // global pending message compaction settings
 }
 
 type TelegramConfig struct {
 	Enabled        bool                `json:"enabled"`
 	Token          string              `json:"token"`
 	Proxy          string              `json:"proxy,omitempty"`
+	APIServer      string              `json:"api_server,omitempty"` // custom Telegram Bot API server URL (e.g. "http://localhost:8081")
 	AllowFrom      FlexibleStringSlice `json:"allow_from"`
 	DMPolicy       string              `json:"dm_policy,omitempty"`       // "pairing" (default), "allowlist", "open", "disabled"
 	GroupPolicy    string              `json:"group_policy,omitempty"`    // "open" (default), "allowlist", "disabled"
@@ -70,11 +83,11 @@ type TelegramTopicConfig struct {
 }
 
 type DiscordConfig struct {
-	Enabled        bool                `json:"enabled"`
-	Token          string              `json:"token"`
-	AllowFrom      FlexibleStringSlice `json:"allow_from"`
-	DMPolicy       string              `json:"dm_policy,omitempty"`       // "open" (default), "allowlist", "disabled"
-	GroupPolicy    string              `json:"group_policy,omitempty"`    // "open" (default), "allowlist", "disabled"
+	Enabled           bool                `json:"enabled"`
+	Token             string              `json:"token"`
+	AllowFrom         FlexibleStringSlice `json:"allow_from"`
+	DMPolicy          string              `json:"dm_policy,omitempty"`       // "open" (default), "allowlist", "disabled"
+	GroupPolicy       string              `json:"group_policy,omitempty"`    // "open" (default), "allowlist", "disabled"
 	RequireMention    *bool               `json:"require_mention,omitempty"` // require @bot mention in groups (default true)
 	HistoryLimit      int                 `json:"history_limit,omitempty"`   // max pending group messages for context (default 50, 0=disabled)
 	BlockReply        *bool               `json:"block_reply,omitempty"`     // override gateway block_reply (nil = inherit)
@@ -88,22 +101,22 @@ type DiscordConfig struct {
 
 type SlackConfig struct {
 	Enabled        bool                `json:"enabled"`
-	BotToken       string              `json:"bot_token"`                    // xoxb-... (Bot User OAuth Token)
-	AppToken       string              `json:"app_token"`                    // xapp-... (App-Level Token for Socket Mode)
-	UserToken      string              `json:"user_token,omitempty"`         // xoxp-... (Optional: custom bot identity)
+	BotToken       string              `json:"bot_token"`            // xoxb-... (Bot User OAuth Token)
+	AppToken       string              `json:"app_token"`            // xapp-... (App-Level Token for Socket Mode)
+	UserToken      string              `json:"user_token,omitempty"` // xoxp-... (Optional: custom bot identity)
 	AllowFrom      FlexibleStringSlice `json:"allow_from"`
-	DMPolicy       string              `json:"dm_policy,omitempty"`          // "pairing" (default), "allowlist", "open", "disabled"
-	GroupPolicy    string              `json:"group_policy,omitempty"`       // "open" (default), "pairing", "allowlist", "disabled"
-	RequireMention *bool               `json:"require_mention,omitempty"`    // require @bot mention in channels (default true)
-	HistoryLimit   int                 `json:"history_limit,omitempty"`      // max pending group messages for context (default 50, 0=disabled)
-	DMStream       *bool               `json:"dm_stream,omitempty"`          // enable streaming for DMs (default false)
-	GroupStream    *bool               `json:"group_stream,omitempty"`       // enable streaming for groups (default false)
-	NativeStream   *bool               `json:"native_stream,omitempty"`      // use Slack ChatStreamer API if available (default false)
-	ReactionLevel  string              `json:"reaction_level,omitempty"`     // "off" (default), "minimal", "full"
-	BlockReply     *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
-	DebounceDelay  int                 `json:"debounce_delay,omitempty"`     // ms delay before dispatching rapid messages (default 300, 0=disabled)
-	ThreadTTL      *int                `json:"thread_ttl,omitempty"`         // hours before thread participation expires (default 24, 0=disabled — always require @mention)
-	MediaMaxBytes  int64               `json:"media_max_bytes,omitempty"`    // max file download size in bytes (default 20MB)
+	DMPolicy       string              `json:"dm_policy,omitempty"`       // "pairing" (default), "allowlist", "open", "disabled"
+	GroupPolicy    string              `json:"group_policy,omitempty"`    // "open" (default), "pairing", "allowlist", "disabled"
+	RequireMention *bool               `json:"require_mention,omitempty"` // require @bot mention in channels (default true)
+	HistoryLimit   int                 `json:"history_limit,omitempty"`   // max pending group messages for context (default 50, 0=disabled)
+	DMStream       *bool               `json:"dm_stream,omitempty"`       // enable streaming for DMs (default false)
+	GroupStream    *bool               `json:"group_stream,omitempty"`    // enable streaming for groups (default false)
+	NativeStream   *bool               `json:"native_stream,omitempty"`   // use Slack ChatStreamer API if available (default false)
+	ReactionLevel  string              `json:"reaction_level,omitempty"`  // "off" (default), "minimal", "full"
+	BlockReply     *bool               `json:"block_reply,omitempty"`     // override gateway block_reply (nil = inherit)
+	DebounceDelay  int                 `json:"debounce_delay,omitempty"`  // ms delay before dispatching rapid messages (default 300, 0=disabled)
+	ThreadTTL      *int                `json:"thread_ttl,omitempty"`      // hours before thread participation expires (default 24, 0=disabled — always require @mention)
+	MediaMaxBytes  int64               `json:"media_max_bytes,omitempty"` // max file download size in bytes (default 20MB)
 }
 
 type WhatsAppConfig struct {
@@ -159,7 +172,7 @@ type FeishuConfig struct {
 	Streaming         *bool               `json:"streaming,omitempty"`          // default true
 	ReactionLevel     string              `json:"reaction_level,omitempty"`     // "off" (default), "minimal", "full" — typing emoji reactions
 	HistoryLimit      int                 `json:"history_limit,omitempty"`
-	BlockReply        *bool               `json:"block_reply,omitempty"`        // override gateway block_reply (nil = inherit)
+	BlockReply        *bool               `json:"block_reply,omitempty"` // override gateway block_reply (nil = inherit)
 	STTProxyURL       string              `json:"stt_proxy_url,omitempty"`
 	STTAPIKey         string              `json:"stt_api_key,omitempty"`
 	STTTenantID       string              `json:"stt_tenant_id,omitempty"`
@@ -169,20 +182,30 @@ type FeishuConfig struct {
 
 // ProvidersConfig maps provider name to its config.
 type ProvidersConfig struct {
-	Anthropic  ProviderConfig   `json:"anthropic"`
-	OpenAI     ProviderConfig   `json:"openai"`
-	OpenRouter ProviderConfig   `json:"openrouter"`
-	Groq       ProviderConfig   `json:"groq"`
-	Gemini     ProviderConfig   `json:"gemini"`
-	DeepSeek   ProviderConfig   `json:"deepseek"`
-	Mistral    ProviderConfig   `json:"mistral"`
-	XAI        ProviderConfig   `json:"xai"`
-	MiniMax    ProviderConfig   `json:"minimax"`
-	Cohere     ProviderConfig   `json:"cohere"`
-	Perplexity ProviderConfig   `json:"perplexity"`
-	DashScope  ProviderConfig   `json:"dashscope"`
-	Bailian    ProviderConfig   `json:"bailian"`
-	ClaudeCLI  ClaudeCLIConfig  `json:"claude_cli"`
+	Anthropic  ProviderConfig  `json:"anthropic"`
+	OpenAI     ProviderConfig  `json:"openai"`
+	OpenRouter ProviderConfig  `json:"openrouter"`
+	Groq       ProviderConfig  `json:"groq"`
+	Gemini     ProviderConfig  `json:"gemini"`
+	DeepSeek   ProviderConfig  `json:"deepseek"`
+	Mistral    ProviderConfig  `json:"mistral"`
+	XAI        ProviderConfig  `json:"xai"`
+	MiniMax    ProviderConfig  `json:"minimax"`
+	Cohere     ProviderConfig  `json:"cohere"`
+	Perplexity ProviderConfig  `json:"perplexity"`
+	DashScope  ProviderConfig  `json:"dashscope"`
+	Bailian    ProviderConfig  `json:"bailian"`
+	Zai         ProviderConfig  `json:"zai"`
+	ZaiCoding   ProviderConfig  `json:"zai_coding"`
+	Ollama      OllamaConfig    `json:"ollama"`       // local Ollama instance (no API key needed)
+	OllamaCloud ProviderConfig  `json:"ollama_cloud"` // Ollama Cloud (API key required)
+	ClaudeCLI   ClaudeCLIConfig `json:"claude_cli"`
+}
+
+// OllamaConfig configures a local (or self-hosted) Ollama instance.
+// No API key is required — Ollama accepts any Bearer token value.
+type OllamaConfig struct {
+	Host string `json:"host"` // Ollama server base URL, e.g. http://localhost:11434
 }
 
 // ClaudeCLIConfig configures the Claude CLI provider (uses subscription, not API key).
@@ -214,6 +237,10 @@ func (c *Config) HasAnyProvider() bool {
 		p.Perplexity.APIKey != "" ||
 		p.DashScope.APIKey != "" ||
 		p.Bailian.APIKey != "" ||
+		p.Zai.APIKey != "" ||
+		p.ZaiCoding.APIKey != "" ||
+		p.Ollama.Host != "" ||
+		p.OllamaCloud.APIKey != "" ||
 		p.ClaudeCLI.CLIPath != ""
 }
 
@@ -279,17 +306,18 @@ type GatewayConfig struct {
 	InboundDebounceMs int          `json:"inbound_debounce_ms,omitempty"` // merge rapid messages from same sender (default 1000ms, -1 = disabled)
 	Quota             *QuotaConfig `json:"quota,omitempty"`               // per-user/group request quotas
 	BlockReply        *bool        `json:"block_reply,omitempty"`         // deliver intermediate text during tool iterations (default false)
+	ToolStatus        *bool        `json:"tool_status,omitempty"`         // show tool name in streaming preview during tool execution (default true)
 }
 
 // ToolsConfig controls tool availability, policy, and web search.
 type ToolsConfig struct {
-	Profile          string                      `json:"profile,omitempty"`      // global profile: "minimal", "coding", "messaging", "full"
-	Allow            []string                    `json:"allow,omitempty"`        // global allow list (tool names or "group:xxx")
-	Deny             []string                    `json:"deny,omitempty"`         // global deny list
-	AlsoAllow        []string                    `json:"alsoAllow,omitempty"`    // additive: adds without removing existing
-	ByProvider       map[string]*ToolPolicySpec  `json:"byProvider,omitempty"`   // per-provider overrides
-	ExecApproval     ExecApprovalCfg             `json:"execApproval,omitempty"` // exec command approval settings
-	WebFetch         WebFetchPolicyConfig        `json:"web_fetch"`              // domain policy for URL fetching
+	Profile          string                      `json:"profile,omitempty"`    // global profile: "minimal", "coding", "messaging", "full"
+	Allow            []string                    `json:"allow,omitempty"`      // global allow list (tool names or "group:xxx")
+	Deny             []string                    `json:"deny,omitempty"`       // global deny list
+	AlsoAllow        []string                    `json:"alsoAllow,omitempty"`  // additive: adds without removing existing
+	ByProvider       map[string]*ToolPolicySpec  `json:"byProvider,omitempty"` // per-provider overrides
+	ExecApproval     ExecApprovalCfg             `json:"execApproval"`         // exec command approval settings
+	WebFetch         WebFetchPolicyConfig        `json:"web_fetch"`            // domain policy for URL fetching
 	Web              WebToolsConfig              `json:"web"`
 	Browser          BrowserToolConfig           `json:"browser"`
 	RateLimitPerHour int                         `json:"rate_limit_per_hour,omitempty"` // max tool executions per hour per session (0 = disabled)
@@ -331,9 +359,9 @@ type WebFetchPolicyConfig struct {
 
 // BrowserToolConfig controls the browser automation tool.
 type BrowserToolConfig struct {
-	Enabled   bool   `json:"enabled"`                    // enable the browser tool (default false)
-	Headless  bool   `json:"headless,omitempty"`         // run Chrome in headless mode (ignored when RemoteURL is set)
-	RemoteURL string `json:"remote_url,omitempty"`       // CDP endpoint for remote Chrome sidecar, e.g. "ws://chrome:9222"
+	Enabled   bool   `json:"enabled"`              // enable the browser tool (default false)
+	Headless  bool   `json:"headless,omitempty"`   // run Chrome in headless mode (ignored when RemoteURL is set)
+	RemoteURL string `json:"remote_url,omitempty"` // CDP endpoint for remote Chrome sidecar, e.g. "ws://chrome:9222"
 }
 
 // ToolPolicySpec defines a tool policy at any level (global, per-agent, per-provider).
@@ -343,22 +371,6 @@ type ToolPolicySpec struct {
 	Deny       []string                   `json:"deny,omitempty"`
 	AlsoAllow  []string                   `json:"alsoAllow,omitempty"`
 	ByProvider map[string]*ToolPolicySpec `json:"byProvider,omitempty"`
-	Vision     *VisionConfig              `json:"vision,omitempty"`   // per-agent vision provider/model override
-	ImageGen   *ImageGenConfig            `json:"imageGen,omitempty"` // per-agent image generation config
-}
-
-// VisionConfig configures the provider and model for vision tools (read_image).
-type VisionConfig struct {
-	Provider string `json:"provider,omitempty"` // e.g. "gemini", "anthropic"
-	Model    string `json:"model,omitempty"`    // e.g. "gemini-2.0-flash"
-}
-
-// ImageGenConfig configures the provider and model for image generation (create_image).
-type ImageGenConfig struct {
-	Provider string `json:"provider,omitempty"` // provider with image gen API (e.g. "openrouter")
-	Model    string `json:"model,omitempty"`    // e.g. "google/gemini-2.5-flash-image-preview"
-	Size     string `json:"size,omitempty"`     // default aspect ratio / size
-	Quality  string `json:"quality,omitempty"`  // "standard" or "hd"
 }
 
 type WebToolsConfig struct {
@@ -394,10 +406,10 @@ type TtsConfig struct {
 	Mode       string              `json:"mode,omitempty"`       // "final" (default), "all"
 	MaxLength  int                 `json:"max_length,omitempty"` // max text length before truncation (default 1500)
 	TimeoutMs  int                 `json:"timeout_ms,omitempty"` // API timeout in ms (default 30000)
-	OpenAI     TtsOpenAIConfig     `json:"openai,omitempty"`
-	ElevenLabs TtsElevenLabsConfig `json:"elevenlabs,omitempty"`
-	Edge       TtsEdgeConfig       `json:"edge,omitempty"`
-	MiniMax    TtsMiniMaxConfig    `json:"minimax,omitempty"`
+	OpenAI     TtsOpenAIConfig     `json:"openai"`
+	ElevenLabs TtsElevenLabsConfig `json:"elevenlabs"`
+	Edge       TtsEdgeConfig       `json:"edge"`
+	MiniMax    TtsMiniMaxConfig    `json:"minimax"`
 }
 
 // TtsOpenAIConfig configures the OpenAI TTS provider.

@@ -4,10 +4,13 @@ import (
 	"context"
 	"encoding/json"
 	"log/slog"
+	"slices"
 
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
+	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
+	"github.com/nextlevelbuilder/goclaw/internal/i18n"
 	"github.com/nextlevelbuilder/goclaw/internal/store"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 	"github.com/nextlevelbuilder/goclaw/pkg/protocol"
@@ -22,10 +25,11 @@ type AgentsMethods struct {
 	workspace   string
 	agentStore  store.AgentStore
 	interceptor *tools.ContextFileInterceptor // invalidated on file writes
+	eventBus    bus.EventPublisher
 }
 
-func NewAgentsMethods(agents *agent.Router, cfg *config.Config, cfgPath, workspace string, agentStore store.AgentStore, interceptor *tools.ContextFileInterceptor) *AgentsMethods {
-	return &AgentsMethods{agents: agents, cfg: cfg, cfgPath: cfgPath, workspace: workspace, agentStore: agentStore, interceptor: interceptor}
+func NewAgentsMethods(agents *agent.Router, cfg *config.Config, cfgPath, workspace string, agentStore store.AgentStore, interceptor *tools.ContextFileInterceptor, eventBus bus.EventPublisher) *AgentsMethods {
+	return &AgentsMethods{agents: agents, cfg: cfg, cfgPath: cfgPath, workspace: workspace, agentStore: agentStore, interceptor: interceptor, eventBus: eventBus}
 }
 
 // isOwnerUser checks if the given user ID is in the configured owner IDs.
@@ -33,12 +37,7 @@ func (m *AgentsMethods) isOwnerUser(userID string) bool {
 	if userID == "" {
 		return false
 	}
-	for _, id := range m.cfg.Gateway.OwnerIDs {
-		if id == userID {
-			return true
-		}
-	}
-	return false
+	return slices.Contains(m.cfg.Gateway.OwnerIDs, userID)
 }
 
 func (m *AgentsMethods) Register(router *gateway.MethodRouter) {
@@ -73,7 +72,7 @@ func (m *AgentsMethods) handleAgent(_ context.Context, client *gateway.Client, r
 		return
 	}
 
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]interface{}{
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"id":        loop.ID(),
 		"isRunning": loop.IsRunning(),
 	}))
@@ -95,7 +94,7 @@ func (m *AgentsMethods) handleAgentWait(_ context.Context, client *gateway.Clien
 	}
 
 	// Return current status (blocking wait is a future enhancement).
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]interface{}{
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"id":     loop.ID(),
 		"status": "idle",
 	}))
@@ -103,9 +102,10 @@ func (m *AgentsMethods) handleAgentWait(_ context.Context, client *gateway.Clien
 
 func (m *AgentsMethods) handleList(ctx context.Context, client *gateway.Client, req *protocol.RequestFrame) {
 	if m.agentStore != nil {
+		locale := store.LocaleFromContext(ctx)
 		userID := client.UserID()
 		if userID == "" {
-			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, "user context required"))
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInvalidRequest, i18n.T(locale, i18n.MsgUserCtxRequired)))
 			return
 		}
 
@@ -118,16 +118,16 @@ func (m *AgentsMethods) handleList(ctx context.Context, client *gateway.Client, 
 		}
 		if err != nil {
 			slog.Warn("agents.list: store query failed", "error", err)
-			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, "failed to list agents"))
+			client.SendResponse(protocol.NewErrorResponse(req.ID, protocol.ErrInternal, i18n.T(locale, i18n.MsgFailedToList, "agents")))
 			return
 		}
 
-		infos := make([]map[string]interface{}, 0, len(agents))
+		infos := make([]map[string]any, 0, len(agents))
 		for _, a := range agents {
 			if a.Status != store.AgentStatusActive {
 				continue
 			}
-			infos = append(infos, map[string]interface{}{
+			infos = append(infos, map[string]any{
 				"id":        a.AgentKey,
 				"name":      a.DisplayName,
 				"model":     a.Model,
@@ -137,7 +137,7 @@ func (m *AgentsMethods) handleList(ctx context.Context, client *gateway.Client, 
 				"isRunning": m.agents.IsRunning(a.AgentKey),
 			})
 		}
-		client.SendResponse(protocol.NewOKResponse(req.ID, map[string]interface{}{
+		client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 			"agents": infos,
 		}))
 		return
@@ -145,7 +145,7 @@ func (m *AgentsMethods) handleList(ctx context.Context, client *gateway.Client, 
 
 	// Fallback: return router-cached agents.
 	infos := m.agents.ListInfo()
-	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]interface{}{
+	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{
 		"agents": infos,
 	}))
 }

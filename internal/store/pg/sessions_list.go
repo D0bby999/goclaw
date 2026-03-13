@@ -63,13 +63,10 @@ func (s *PGSessionStore) ListPaged(opts store.SessionListOpts) store.SessionList
 	if limit <= 0 {
 		limit = 20
 	}
-	offset := opts.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(opts.Offset, 0)
 
 	var where string
-	var whereArgs []interface{}
+	var whereArgs []any
 
 	if opts.AgentID != "" {
 		where = " WHERE session_key LIKE $1"
@@ -85,16 +82,16 @@ func (s *PGSessionStore) ListPaged(opts store.SessionListOpts) store.SessionList
 
 	// Fetch page using jsonb_array_length to avoid loading full messages
 	var selectQ string
-	var selectArgs []interface{}
+	var selectArgs []any
 
 	if opts.AgentID != "" {
 		selectQ = `SELECT session_key, jsonb_array_length(messages), created_at, updated_at, label, channel, user_id, COALESCE(metadata, '{}')
 		           FROM sessions WHERE session_key LIKE $1 ORDER BY updated_at DESC LIMIT $2 OFFSET $3`
-		selectArgs = []interface{}{whereArgs[0], limit, offset}
+		selectArgs = []any{whereArgs[0], limit, offset}
 	} else {
 		selectQ = `SELECT session_key, jsonb_array_length(messages), created_at, updated_at, label, channel, user_id, COALESCE(metadata, '{}')
 		           FROM sessions ORDER BY updated_at DESC LIMIT $1 OFFSET $2`
-		selectArgs = []interface{}{limit, offset}
+		selectArgs = []any{limit, offset}
 	}
 
 	rows, err := s.db.Query(selectQ, selectArgs...)
@@ -140,13 +137,10 @@ func (s *PGSessionStore) ListPagedRich(opts store.SessionListOpts) store.Session
 	if limit <= 0 {
 		limit = 20
 	}
-	offset := opts.Offset
-	if offset < 0 {
-		offset = 0
-	}
+	offset := max(opts.Offset, 0)
 
 	var where string
-	var whereArgs []interface{}
+	var whereArgs []any
 
 	if opts.AgentID != "" {
 		where = " WHERE s.session_key LIKE $1"
@@ -162,23 +156,26 @@ func (s *PGSessionStore) ListPagedRich(opts store.SessionListOpts) store.Session
 
 	// Fetch page with agent name via LEFT JOIN
 	var selectQ string
-	var selectArgs []interface{}
+	var selectArgs []any
 
 	const richCols = `s.session_key, jsonb_array_length(s.messages), s.created_at, s.updated_at,
 		s.label, s.channel, s.user_id, COALESCE(s.metadata, '{}'),
 		s.model, s.provider, s.input_tokens, s.output_tokens,
-		COALESCE(a.display_name, '')`
+		COALESCE(a.display_name, ''),
+		octet_length(s.messages::text) / 4 + 12000,
+		COALESCE(a.context_window, 200000),
+		s.compaction_count`
 
 	if opts.AgentID != "" {
 		selectQ = `SELECT ` + richCols + `
 		           FROM sessions s LEFT JOIN agents a ON s.agent_id = a.id
 		           WHERE s.session_key LIKE $1 ORDER BY s.updated_at DESC LIMIT $2 OFFSET $3`
-		selectArgs = []interface{}{whereArgs[0], limit, offset}
+		selectArgs = []any{whereArgs[0], limit, offset}
 	} else {
 		selectQ = `SELECT ` + richCols + `
 		           FROM sessions s LEFT JOIN agents a ON s.agent_id = a.id
 		           ORDER BY s.updated_at DESC LIMIT $1 OFFSET $2`
-		selectArgs = []interface{}{limit, offset}
+		selectArgs = []any{limit, offset}
 	}
 
 	rows, err := s.db.Query(selectQ, selectArgs...)
@@ -197,8 +194,10 @@ func (s *PGSessionStore) ListPagedRich(opts store.SessionListOpts) store.Session
 		var model, provider *string
 		var inputTokens, outputTokens int64
 		var agentName string
+		var estimatedTokens, contextWindow, compactionCount int
 		if err := rows.Scan(&key, &msgCount, &createdAt, &updatedAt, &label, &channel, &userID, &metaJSON,
-			&model, &provider, &inputTokens, &outputTokens, &agentName); err != nil {
+			&model, &provider, &inputTokens, &outputTokens, &agentName,
+			&estimatedTokens, &contextWindow, &compactionCount); err != nil {
 			continue
 		}
 		var meta map[string]string
@@ -216,11 +215,14 @@ func (s *PGSessionStore) ListPagedRich(opts store.SessionListOpts) store.Session
 				UserID:       derefStr(userID),
 				Metadata:     meta,
 			},
-			Model:        derefStr(model),
-			Provider:     derefStr(provider),
-			InputTokens:  inputTokens,
-			OutputTokens: outputTokens,
-			AgentName:    agentName,
+			Model:           derefStr(model),
+			Provider:        derefStr(provider),
+			InputTokens:     inputTokens,
+			OutputTokens:    outputTokens,
+			AgentName:       agentName,
+			EstimatedTokens: estimatedTokens,
+			ContextWindow:   contextWindow,
+			CompactionCount: compactionCount,
 		})
 	}
 	if result == nil {

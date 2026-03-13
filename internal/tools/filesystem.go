@@ -17,8 +17,8 @@ import (
 // virtualSystemFiles are files dynamically injected into the system prompt.
 // They don't exist on disk — if the model tries to read them, return a hint.
 var virtualSystemFiles = map[string]string{
-	bootstrap.TeamFile:       "TEAM.md is already loaded in your system prompt. Refer to the TEAM.md section in your context above for team member information.",
-	bootstrap.DelegationFile: "DELEGATION.md is already loaded in your system prompt. Refer to the DELEGATION.md section in your context above for delegation instructions and available agents.",
+	bootstrap.TeamFile:         "TEAM.md is already loaded in your system prompt. Refer to the TEAM.md section in your context above for team member information.",
+	bootstrap.DelegationFile:   "DELEGATION.md is already loaded in your system prompt. Refer to the DELEGATION.md section in your context above for delegation instructions and available agents.",
 	bootstrap.AvailabilityFile: "AVAILABILITY.md is already loaded in your system prompt. Refer to the AVAILABILITY.md section in your context above for agent availability information.",
 }
 
@@ -26,12 +26,12 @@ var virtualSystemFiles = map[string]string{
 type ReadFileTool struct {
 	workspace        string
 	restrict         bool
-	allowedPrefixes  []string              // extra allowed path prefixes (e.g. skills dirs)
-	deniedPrefixes   []string              // path prefixes to deny access to (e.g. .goclaw)
-	sandboxMgr       sandbox.Manager       // nil = direct host access
+	allowedPrefixes  []string                // extra allowed path prefixes (e.g. skills dirs)
+	deniedPrefixes   []string                // path prefixes to deny access to (e.g. .goclaw)
+	sandboxMgr       sandbox.Manager         // nil = direct host access
 	contextFileIntc  *ContextFileInterceptor // nil = no virtual FS routing
 	memIntc          *MemoryInterceptor      // nil = no memory routing
-	groupWriterCache *store.GroupWriterCache  // nil = no group read restriction
+	groupWriterCache *store.GroupWriterCache // nil = no group read restriction
 }
 
 // SetContextFileInterceptor enables virtual FS routing for context files.
@@ -73,20 +73,20 @@ func (t *ReadFileTool) SetSandboxKey(key string) {}
 
 func (t *ReadFileTool) Name() string        { return "read_file" }
 func (t *ReadFileTool) Description() string { return "Read the contents of a file" }
-func (t *ReadFileTool) Parameters() map[string]interface{} {
-	return map[string]interface{}{
+func (t *ReadFileTool) Parameters() map[string]any {
+	return map[string]any{
 		"type": "object",
-		"properties": map[string]interface{}{
-			"path": map[string]interface{}{
+		"properties": map[string]any{
+			"path": map[string]any{
 				"type":        "string",
-				"description": "Path to the file to read",
+				"description": "File path (relative to workspace, or absolute)",
 			},
 		},
 		"required": []string{"path"},
 	}
 }
 
-func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{}) *Result {
+func (t *ReadFileTool) Execute(ctx context.Context, args map[string]any) *Result {
 	path, _ := args["path"].(string)
 	if path == "" {
 		return ErrorResult("path is required")
@@ -146,7 +146,7 @@ func (t *ReadFileTool) Execute(ctx context.Context, args map[string]interface{})
 	if workspace == "" {
 		workspace = t.workspace
 	}
-	resolved, err := resolvePathWithAllowed(path, workspace, t.restrict, t.allowedPrefixes)
+	resolved, err := resolvePathWithAllowed(path, workspace, effectiveRestrict(ctx, t.restrict), t.allowedPrefixes)
 	if err != nil {
 		return ErrorResult(err.Error())
 	}
@@ -177,7 +177,7 @@ func (t *ReadFileTool) executeInSandbox(ctx context.Context, path, sandboxKey st
 }
 
 func (t *ReadFileTool) getFsBridge(ctx context.Context, sandboxKey string) (*sandbox.FsBridge, error) {
-	sb, err := t.sandboxMgr.Get(ctx, sandboxKey, t.workspace)
+	sb, err := t.sandboxMgr.Get(ctx, sandboxKey, t.workspace, SandboxConfigFromCtx(ctx))
 	if err != nil {
 		return nil, err
 	}

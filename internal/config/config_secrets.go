@@ -34,6 +34,9 @@ func (c *Config) MaskedCopy() *Config {
 	maskNonEmpty(&cp.Providers.Perplexity.APIKey)
 	maskNonEmpty(&cp.Providers.DashScope.APIKey)
 	maskNonEmpty(&cp.Providers.Bailian.APIKey)
+	maskNonEmpty(&cp.Providers.Zai.APIKey)
+	maskNonEmpty(&cp.Providers.ZaiCoding.APIKey)
+	maskNonEmpty(&cp.Providers.OllamaCloud.APIKey)
 
 	// Mask gateway token
 	maskNonEmpty(&cp.Gateway.Token)
@@ -81,6 +84,9 @@ func (c *Config) StripSecrets() {
 	c.Providers.Perplexity.APIKey = ""
 	c.Providers.DashScope.APIKey = ""
 	c.Providers.Bailian.APIKey = ""
+	c.Providers.Zai.APIKey = ""
+	c.Providers.ZaiCoding.APIKey = ""
+	c.Providers.OllamaCloud.APIKey = ""
 
 	// Gateway token
 	c.Gateway.Token = ""
@@ -133,6 +139,9 @@ func (c *Config) StripMaskedSecrets() {
 	stripIfMasked(&c.Providers.Perplexity.APIKey)
 	stripIfMasked(&c.Providers.DashScope.APIKey)
 	stripIfMasked(&c.Providers.Bailian.APIKey)
+	stripIfMasked(&c.Providers.Zai.APIKey)
+	stripIfMasked(&c.Providers.ZaiCoding.APIKey)
+	stripIfMasked(&c.Providers.OllamaCloud.APIKey)
 
 	// Gateway token
 	stripIfMasked(&c.Gateway.Token)

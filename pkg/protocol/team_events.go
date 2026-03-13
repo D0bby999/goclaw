@@ -30,6 +30,8 @@ type DelegationProgressItem struct {
 	TargetDisplayName string `json:"target_display_name,omitempty"`
 	ElapsedMS         int    `json:"elapsed_ms"`
 	TeamTaskID        string `json:"team_task_id,omitempty"`
+	Activity          string `json:"activity,omitempty"` // "thinking", "tool_exec", "compacting"
+	Tool              string `json:"tool,omitempty"`     // current tool name (when Activity == "tool_exec")
 }
 
 // DelegationProgressPayload is emitted periodically for async delegations.
@@ -101,7 +103,7 @@ type QualityGateRetryPayload struct {
 }
 
 // TeamTaskEventPayload is the typed payload for team task lifecycle events
-// (created, claimed, completed, cancelled).
+// (created, claimed, completed, cancelled, approved, rejected).
 type TeamTaskEventPayload struct {
 	TeamID           string `json:"team_id"`
 	TaskID           string `json:"task_id"`

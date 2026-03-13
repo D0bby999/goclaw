@@ -5,6 +5,7 @@ import (
 	"log/slog"
 	"strings"
 
+	"github.com/nextlevelbuilder/goclaw/internal/providers"
 	"github.com/nextlevelbuilder/goclaw/internal/tools"
 )
 
@@ -38,11 +39,42 @@ func (l *Loop) scanWebToolResult(toolName string, result *tools.Result) {
 	}
 }
 
+// shouldShareWorkspace checks if the given user should share the base workspace
+// directory (skip per-user subfolder isolation) based on workspace_sharing config.
+func (l *Loop) shouldShareWorkspace(userID, peerKind string) bool {
+	ws := l.workspaceSharing
+	if ws == nil {
+		return false
+	}
+	for _, u := range ws.SharedUsers {
+		if u == userID {
+			return true
+		}
+	}
+	switch peerKind {
+	case "direct":
+		return ws.SharedDM
+	case "group":
+		return ws.SharedGroup
+	}
+	return false
+}
+
+// shouldShareMemory returns true if memory/KG should be shared across all users.
+// Independent of workspace folder sharing.
+func (l *Loop) shouldShareMemory() bool {
+	return l.workspaceSharing != nil && l.workspaceSharing.ShareMemory
+}
+
 // InvalidateUserWorkspace clears the cached workspace for a user,
 // forcing the next request to re-read from user_agent_profiles.
 func (l *Loop) InvalidateUserWorkspace(userID string) {
 	l.userWorkspaces.Delete(userID)
 }
+
+// Provider returns the LLM provider for this agent loop.
+// Used by intent classifier to make lightweight LLM calls with the agent's own provider.
+func (l *Loop) Provider() providers.Provider { return l.provider }
 
 // ProviderName returns the name of this agent's LLM provider (e.g. "anthropic", "openai").
 func (l *Loop) ProviderName() string {
