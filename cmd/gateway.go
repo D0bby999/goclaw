@@ -15,6 +15,7 @@ import (
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
 	"github.com/nextlevelbuilder/goclaw/internal/bootstrap"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
+	"github.com/nextlevelbuilder/goclaw/internal/cache"
 	ccpkg "github.com/nextlevelbuilder/goclaw/internal/claudecode"
 	"github.com/nextlevelbuilder/goclaw/internal/channels"
 	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
@@ -800,7 +801,7 @@ func runGateway() {
 	if pgStores != nil && pgStores.KB != nil && mediaStore != nil {
 		memCfg := cfg.Agents.Defaults.Memory
 		var kbEmbProvider store.EmbeddingProvider
-		if ep := resolveEmbeddingProvider(cfg, memCfg); ep != nil {
+		if ep := resolveEmbeddingProvider(cfg, memCfg, providerRegistry); ep != nil {
 			kbEmbProvider = ep
 		}
 		kbProc = kb.NewProcessor(pgStores.KB, mediaStore, kbEmbProvider)

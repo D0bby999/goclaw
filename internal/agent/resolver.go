@@ -77,6 +77,12 @@ type ResolverDeps struct {
 
 	// Persistent media storage for cross-turn image/document access
 	MediaStore media.Storage
+
+	// Model pricing for cost tracking
+	ModelPricing map[string]*config.ModelPricing
+
+	// Tracing store for budget enforcement queries
+	TracingStore store.TracingStore
 }
 
 // NewManagedResolver creates a ResolverFunc that builds Loops from DB agent data.

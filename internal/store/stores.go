@@ -28,4 +28,8 @@ type Stores struct {
 	ContentSchedules ContentScheduleStore
 	PendingMessages  PendingMessageStore
 	KB               KBStore
+	KnowledgeGraph   KnowledgeGraphStore
+	Contacts         ContactStore
+	Activity         ActivityStore
+	Snapshots        SnapshotStore
 }

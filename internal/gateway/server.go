@@ -64,6 +64,8 @@ type Server struct {
 	mediaUploadHandler      *httpapi.MediaUploadHandler      // media upload endpoint
 	mediaServeHandler       *httpapi.MediaServeHandler       // media serve endpoint
 	kbHandler               *httpapi.KBHandler               // knowledge base API
+	activityHandler         *httpapi.ActivityHandler         // activity audit log API
+	usageHandler            *httpapi.UsageHandler            // usage analytics API
 	agentStore         store.AgentStore             // for context injection in tools_invoke
 	msgBus             *bus.MessageBus              // for MCP bridge media delivery
 
@@ -531,6 +533,15 @@ func (s *Server) SetMemoryHandler(h *httpapi.MemoryHandler) { s.memoryHandler = 
 
 // SetKBHandler sets the knowledge base handler.
 func (s *Server) SetKBHandler(h *httpapi.KBHandler) { s.kbHandler = h }
+
+// SetKnowledgeGraphHandler sets the knowledge graph handler.
+func (s *Server) SetKnowledgeGraphHandler(h *httpapi.KnowledgeGraphHandler) { s.kgHandler = h }
+
+// SetActivityHandler sets the activity audit log handler.
+func (s *Server) SetActivityHandler(h *httpapi.ActivityHandler) { s.activityHandler = h }
+
+// SetUsageHandler sets the usage analytics handler.
+func (s *Server) SetUsageHandler(h *httpapi.UsageHandler) { s.usageHandler = h }
 
 // SetAgentStore sets the agent store for context injection in tools_invoke.
 func (s *Server) SetAgentStore(as store.AgentStore) { s.agentStore = as }
