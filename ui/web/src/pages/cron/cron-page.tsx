@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useTranslation } from "react-i18next";
 import { useParams, useNavigate } from "react-router";
 import { Clock, Plus, Play, Trash2, History, RefreshCw, Loader2, Pencil } from "lucide-react";
 import { Button } from "@/components/ui/button";

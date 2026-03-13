@@ -102,6 +102,12 @@ const MemoryPage = lazy(() =>
 const KBPage = lazy(() =>
   import("@/pages/knowledge-base/kb-page").then((m) => ({ default: m.KBPage })),
 );
+const ActivityPage = lazy(() =>
+  import("@/pages/activity/activity-page").then((m) => ({ default: m.ActivityPage })),
+);
+const ContactsPage = lazy(() =>
+  import("@/pages/contacts/contacts-page").then((m) => ({ default: m.ContactsPage })),
+);
 
 function PageLoader() {
   return (

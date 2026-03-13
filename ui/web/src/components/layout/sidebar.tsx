@@ -24,6 +24,9 @@ import {
   Inbox,
   Brain,
   BookOpen,
+  Wrench,
+  Network,
+  ClipboardList,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SidebarGroup } from "./sidebar-group";

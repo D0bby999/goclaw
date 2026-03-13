@@ -21,7 +21,6 @@ import { TtsSection } from "./sections/tts-section";
 import { CronSection } from "./sections/cron-section";
 import { TelemetrySection } from "./sections/telemetry-section";
 import { BindingsSection } from "./sections/bindings-section";
-import { QuotaSection } from "./sections/quota-section";
 import { ScrapersSection } from "./sections/scrapers-section";
 
 export function ConfigPage() {

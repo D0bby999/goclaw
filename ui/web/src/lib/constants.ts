@@ -42,6 +42,8 @@ export const ROUTES = {
   PENDING_MESSAGES: "/pending-messages",
   MEMORY: "/memory",
   KNOWLEDGE_BASE: "/knowledge-base",
+  KNOWLEDGE_GRAPH: "/knowledge-graph",
+  ACTIVITY: "/activity",
   SETUP: "/setup",
 } as const;
 

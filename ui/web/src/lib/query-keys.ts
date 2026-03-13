@@ -102,4 +102,11 @@ export const queryKeys = {
     documents: (collectionId: string) => ["kb", "documents", collectionId] as const,
     document: (documentId: string) => ["kb", "document", documentId] as const,
   },
+  kg: {
+    all: ["kg"] as const,
+    list: (filters: { agentId: string; userId?: string; entityType?: string; query?: string }) => ["kg", "list", filters] as const,
+    search: (agentId: string, query: string) => ["kg", "search", agentId, query] as const,
+    stats: (agentId: string, userId?: string) => ["kg", "stats", agentId, userId] as const,
+    graph: (agentId: string, userId?: string) => ["kg", "graph", agentId, userId] as const,
+  },
 };

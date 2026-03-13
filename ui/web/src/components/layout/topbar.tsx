@@ -1,8 +1,11 @@
-import { Moon, Sun, PanelLeftClose, PanelLeftOpen, Menu, LogOut } from "lucide-react";
+import { Moon, Sun, PanelLeftClose, PanelLeftOpen, Menu, LogOut, Globe, Clock } from "lucide-react";
+import { useTranslation } from "react-i18next";
 import { useUiStore } from "@/stores/use-ui-store";
 import { useAuthStore } from "@/stores/use-auth-store";
 import { useIsMobile } from "@/hooks/use-media-query";
 import { NotificationBell } from "@/components/notifications/notification-bell";
+import { SUPPORTED_LANGUAGES, LANGUAGE_LABELS, TIMEZONE_OPTIONS } from "@/lib/constants";
+import type { Language } from "@/lib/constants";
 
 export function Topbar() {
   const { t } = useTranslation("topbar");
@@ -16,6 +19,7 @@ export function Topbar() {
   const toggleSidebar = useUiStore((s) => s.toggleSidebar);
   const setMobileSidebarOpen = useUiStore((s) => s.setMobileSidebarOpen);
   const logout = useAuthStore((s) => s.logout);
+  const userId = useAuthStore((s) => s.userId);
   const isMobile = useIsMobile();
 
   const isDark = theme === "dark" || (theme === "system" && window.matchMedia("(prefers-color-scheme: dark)").matches);

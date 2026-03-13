@@ -1,4 +1,5 @@
 import { useEffect, useState } from "react";
+import { useTranslation } from "react-i18next";
 import {
   Dialog,
   DialogContent,
@@ -72,6 +73,7 @@ function decodeRecipients(channel: string, to: string): string[] {
 }
 
 export function CronFormDialog({ open, onOpenChange, editJob, onSubmit }: CronFormDialogProps) {
+  const { t } = useTranslation("cron");
   const [name, setName] = useState("");
   const [message, setMessage] = useState("");
   const [agentId, setAgentId] = useState("");
