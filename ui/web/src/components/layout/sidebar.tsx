@@ -17,16 +17,17 @@ import {
   Plug,
   Volume2,
   Cpu,
-  ArrowRightLeft,
   Newspaper,
   Share2,
+  ClipboardList,
   HardDrive,
   Inbox,
   Brain,
   BookOpen,
   Wrench,
   Network,
-  ClipboardList,
+  KeyRound,
+  FileText,
 } from "lucide-react";
 import { useTranslation } from "react-i18next";
 import { SidebarGroup } from "./sidebar-group";
@@ -119,21 +120,23 @@ export function Sidebar({ collapsed, onNavItemClick }: SidebarProps) {
         <SidebarGroup label={t("groups.monitoring")} collapsed={collapsed}>
           <SidebarItem to={ROUTES.TRACES} icon={Activity} label={t("nav.traces")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.EVENTS} icon={Radar} label={t("nav.realtimeEvents")} collapsed={collapsed} />
-          <SidebarItem to={ROUTES.DELEGATIONS} icon={ArrowRightLeft} label={t("nav.delegations")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.ACTIVITY} icon={ClipboardList} label={t("nav.activity")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.LOGS} icon={Terminal} label={t("nav.logs")} collapsed={collapsed} />
         </SidebarGroup>
 
         <SidebarGroup label={t("groups.system")} collapsed={collapsed}>
           <SidebarItem to={ROUTES.PROVIDERS} icon={Cpu} label={t("nav.providers")} collapsed={collapsed} />
+          <SidebarItem to={ROUTES.CLI_CREDENTIALS} icon={KeyRound} label={t("nav.cliCredentials")} collapsed={collapsed} />
+          <SidebarItem to={ROUTES.API_KEYS} icon={KeyRound} label={t("nav.apiKeys")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.CONFIG} icon={Settings} label={t("nav.config")} collapsed={collapsed} />
           <SidebarItem to={ROUTES.APPROVALS} icon={ShieldCheck} label={t("nav.approvals")} collapsed={collapsed} />
+          <SidebarItem to="/docs" icon={FileText} label={t("nav.apiDocs")} collapsed={collapsed} external />
         </SidebarGroup>
       </nav>
 
       {/* Footer: connection status */}
-      <div className="border-t px-4 py-3">
-        <ConnectionStatus />
+      <div className={cn("border-t py-3", collapsed ? "px-2 flex justify-center" : "px-4")}>
+        <ConnectionStatus collapsed={collapsed} />
       </div>
     </aside>
   );

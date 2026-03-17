@@ -3,6 +3,7 @@ package agent
 import (
 	"fmt"
 	"path/filepath"
+	"slices"
 	"strings"
 	"time"
 
@@ -85,21 +86,7 @@ func buildUserIdentitySection(ownerIDs []string) []string {
 func buildTimeSection() []string {
 	now := time.Now()
 	return []string{
-		fmt.Sprintf("Current time: %s (UTC)", now.UTC().Format("2006-01-02 15:04 Monday")),
-		"",
-	}
-}
-
-func buildMessagingSection() []string {
-	return []string{
-		"## Messaging",
-		"",
-		"- Reply in current session → automatically routes to the source channel (Telegram, Discord, etc.)",
-		"- Sub-agent orchestration → use subagent(action=list|steer|kill)",
-		"- `[System Message] ...` blocks are internal context and are not user-visible by default.",
-		"- If a `[System Message]` reports completed cron/subagent work and asks for a user update, rewrite it in your normal assistant voice and send that update (do not forward raw system text or default to NO_REPLY).",
-		"- Never use exec/curl for provider messaging; GoClaw handles all routing internally.",
-		"- **Language**: Always match the user's language. If the user writes in Vietnamese, respond in Vietnamese. If in English, respond in English. Detect from the user's first message and stay consistent.",
+		fmt.Sprintf("Current date: %s (UTC)", now.UTC().Format("2006-01-02 Monday")),
 		"",
 	}
 }
@@ -220,24 +207,6 @@ func buildProjectContextSection(files []bootstrap.ContextFile, agentType string)
 	}
 
 	return lines
-}
-
-func buildSilentRepliesSection() []string {
-	return []string{
-		"## Silent Replies",
-		"",
-		"When you have nothing to say, respond with ONLY: NO_REPLY",
-		"",
-		"Rules:",
-		"- It must be your ENTIRE message — nothing else",
-		"- Never append it to an actual response (never include \"NO_REPLY\" in real replies)",
-		"- Never wrap it in markdown or code blocks",
-		"",
-		"Wrong: \"Here's help... NO_REPLY\"",
-		"Wrong: \"NO_REPLY\"  (with quotes)",
-		"Right: NO_REPLY",
-		"",
-	}
 }
 
 func buildSpawnSection() []string {
@@ -368,12 +337,43 @@ func buildPersonaReminder(files []bootstrap.ContextFile, agentType string) []str
 	return []string{reminder, ""}
 }
 
-// hasBootstrapFile checks if BOOTSTRAP.md is present in the context files.
+// hasBootstrapFile checks if BOOTSTRAP.md is present in context files.
 func hasBootstrapFile(files []bootstrap.ContextFile) bool {
 	for _, f := range files {
-		if strings.EqualFold(filepath.Base(f.Path), bootstrap.BootstrapFile) {
+		if filepath.Base(f.Path) == bootstrap.BootstrapFile {
 			return true
 		}
 	}
 	return false
+}
+
+// hasTeamWorkspace checks if team_tasks is in the tool list (indicates team context).
+func hasTeamWorkspace(toolNames []string) bool {
+	return slices.Contains(toolNames, "team_tasks")
+}
+
+// buildTeamWorkspaceSection generates guidance for team workspace file tools.
+// teamWsPath is the absolute path to the team shared workspace directory.
+func buildTeamWorkspaceSection(teamWsPath string) []string {
+	if teamWsPath == "" {
+		return nil
+	}
+	return []string{
+		"## Team Shared Workspace",
+		"",
+		fmt.Sprintf("Your team has a shared workspace at: %s", teamWsPath),
+		"",
+		fmt.Sprintf("- Use list_files(path=\"%s\") to browse shared files", teamWsPath),
+		fmt.Sprintf("- Use read_file(path=\"%s/filename.md\") to read team files", teamWsPath),
+		fmt.Sprintf("- Use write_file(path=\"%s/filename.md\", content=\"...\") to write team files", teamWsPath),
+		"- All files in the team workspace are visible to all team members",
+		"- Your default workspace (for relative paths) is your personal workspace",
+		"- To delete a team file, use write_file with empty content",
+		"",
+		"## Auto-Status Updates",
+		"You may receive [Auto-status] messages about team task progress.",
+		"These are informational — simply relay the update to the user naturally.",
+		"Do NOT create, retry, reassign, or modify tasks based on these updates.",
+		"",
+	}
 }

@@ -7,6 +7,9 @@
   "emptyDescription": "Tạo agent đầu tiên để bắt đầu.",
   "noMatchTitle": "Không tìm thấy agent phù hợp",
   "noMatchDescription": "Thử từ khóa tìm kiếm khác.",
+  "viewCard": "Dạng thẻ",
+  "viewList": "Dạng danh sách",
+  "allCreators": "Tất cả người tạo",
   "presets": {
     "foxSpirit": {
       "label": "🐱 Tiểu Hồ",
@@ -43,6 +46,8 @@
   },
   "create": {
     "title": "Tạo agent",
+    "emoji": "Biểu tượng",
+    "emojiHint": "Emoji tùy chọn",
     "displayName": "Tên hiển thị *",
     "displayNamePlaceholder": "Agent của tôi",
     "agentKey": "Khóa agent *",
@@ -95,6 +100,12 @@
     "selfEvolutionLabel": "Cho phép agent tiến hóa phong cách giao tiếp",
     "selfEvolutionHint": "Khi được bật, agent có thể cập nhật SOUL.md để tinh chỉnh giọng điệu, từ vựng và phong cách phản hồi dựa trên tương tác. Nhận dạng, tên và hướng dẫn hoạt động vẫn bị khóa.",
     "selfEvolutionInfo": "Agent sẽ tiến hóa phong cách theo thời gian qua các cập nhật SOUL.md. Chỉ phong cách và giọng điệu bị ảnh hưởng — nhận dạng và quy tắc quy trình làm việc vẫn cố định.",
+    "skillLearning": "Học kỹ năng",
+    "skillLearningLabel": "Cho phép agent tạo và quản lý kỹ năng từ trải nghiệm",
+    "skillLearningHint": "Khi được bật, agent nhận hướng dẫn và nhắc nhở nhẹ để lưu lại quy trình làm việc tái sử dụng thành kỹ năng sau các tác vụ phức tạp. Tool skill_manage được bật mặc định.",
+    "skillLearningInfo": "Sau các tác vụ phức tạp, agent có thể đề xuất lưu quy trình thành kỹ năng tái sử dụng. Luôn cần sự đồng ý của người dùng trước khi tạo kỹ năng. Kỹ năng mặc định là riêng tư.",
+    "skillNudgeIntervalLabel": "Nhắc sau N lệnh tool",
+    "skillNudgeIntervalHint": "Sau số lượng lệnh tool này, agent sẽ đề xuất lưu quy trình thành kỹ năng. Đặt 0 để tắt đề xuất sau tác vụ (hướng dẫn trong system prompt vẫn hiển thị).",
     "budget": "Ngân sách hàng tháng",
     "budgetLabel": "Giới hạn ngân sách (USD)",
     "budgetHint": "Giới hạn chi tiêu hàng tháng tùy chọn. Agent sẽ từ chối yêu cầu khi vượt quá. Để trống cho không giới hạn.",
@@ -117,7 +128,9 @@
     "active": "Hoạt động",
     "inactive": "Không hoạt động",
     "summonFailed": "Triệu hồi thất bại",
-    "defaultAgent": "Agent mặc định"
+    "defaultAgent": "Agent mặc định",
+    "emoji": "Biểu tượng",
+    "emojiHint": "Emoji tùy chọn"
   },
   "llmConfig": {
     "title": "Cấu hình LLM",
@@ -165,7 +178,8 @@
     "perUser": "theo người dùng",
     "emptyFile": "trống",
     "estTokens": "Ước {{tokens}} token",
-    "insertContact": "Tìm liên hệ để chèn..."
+    "insertContact": "Tìm liên hệ để chèn...",
+    "contentPlaceholder": "Nội dung tệp..."
   },
   "fileEditor": {
     "editWithAi": "Chỉnh sửa với AI",
@@ -187,10 +201,14 @@
     "user": "Người dùng",
     "revokeTitle": "Thu hồi chia sẻ",
     "revokeDesc": "Thu hồi quyền truy cập của người dùng \"{{userId}}\"? Họ sẽ không thể sử dụng agent này nữa.",
-    "revoke": "Thu hồi"
+    "revoke": "Thu hồi",
+    "role.user": "Người dùng",
+    "role.viewer": "Người xem",
+    "roleDesc.user": "Có thể sử dụng agent và trò chuyện",
+    "roleDesc.viewer": "Chỉ đọc"
   },
   "links": {
-    "teamsHint": "Để cộng tác đa agent với theo dõi nhiệm vụ và kiểm soát chất lượng, hãy cân nhắc sử dụng Nhóm agent thay thế. Liên kết agent phù hợp nhất cho ủy quyền đơn giản 1-1 giữa hai agent.",
+    "teamsHint": "Agent Links sẽ sớm bị gỡ bỏ. Vui lòng sử dụng Agent Teams để cộng tác đa agent — hỗ trợ quản lý nhiệm vụ, workspace chung và kiểm soát chất lượng trong một hệ thống đơn giản hơn.",
     "createLink": "Tạo liên kết",
     "targetAgent": "Agent đích",
     "selectAgent": "Chọn hoặc tìm kiếm agent...",
@@ -256,7 +274,10 @@
     "continue": "Tiếp tục",
     "retry": "Thử lại",
     "retrying": "Đang thử lại...",
-    "done": "xong"
+    "done": "xong",
+    "fileLabelSOUL": "Linh hồn & Tính cách",
+    "fileLabelIDENTITY": "Thẻ danh tính",
+    "fileLabelUSER_PREDEFINED": "Ngữ cảnh người dùng mặc định"
   },
   "configGroups": {
     "core": "Cốt lõi",
@@ -389,5 +410,14 @@
       "formatJson": "Định dạng JSON",
       "invalidJson": "Cú pháp JSON không hợp lệ"
     }
+  },
+  "toast": {
+    "created": "Đã tạo agent",
+    "createFailed": "Không thể tạo agent",
+    "updated": "Đã cập nhật agent",
+    "updateFailed": "Không thể cập nhật agent",
+    "deleted": "Đã xóa agent",
+    "deleteFailed": "Không thể xóa agent",
+    "unknownError": "Lỗi không xác định"
   }
 }

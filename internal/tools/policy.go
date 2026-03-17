@@ -19,8 +19,7 @@ var toolGroups = map[string][]string{
 	"ui":         {"browser"},
 	"automation": {"cron"},
 	"messaging":  {"message", "create_forum_topic"},
-	"delegation": {"handoff", "delegate_search", "evaluate_loop"},
-	"team":       {"team_tasks", "team_message"},
+	"team":           {"team_tasks", "team_message"},
 	"analytics":     {"analytics"},
 	"notifications": {"notification"},
 	// Composite group: all goclaw native tools (excludes MCP/custom plugins).
@@ -33,7 +32,6 @@ var toolGroups = map[string][]string{
 		"read_image", "read_document", "read_audio", "read_video",
 		"create_image", "create_video",
 		"skill_search", "mcp_tool_search", "tts",
-		"handoff", "delegate_search", "evaluate_loop",
 		"team_tasks", "team_message",
 		"analytics",
 		"notification",
@@ -353,6 +351,40 @@ func unionWithSpec(current []string, allTools []string, spec []string) []string 
 		}
 	}
 	return current
+}
+
+// IsDenied checks if a tool name is explicitly denied by global or agent policy.
+// Used to prevent lazy-activated deferred tools from bypassing the deny list.
+func (pe *PolicyEngine) IsDenied(name string, agentPolicy *config.ToolPolicySpec) bool {
+	if pe.globalPolicy != nil {
+		if matchDenySpec(name, pe.globalPolicy.Deny) {
+			return true
+		}
+	}
+	if agentPolicy != nil {
+		if matchDenySpec(name, agentPolicy.Deny) {
+			return true
+		}
+	}
+	return false
+}
+
+// matchDenySpec returns true if name matches any entry in the deny spec (with group expansion).
+func matchDenySpec(name string, spec []string) bool {
+	for _, s := range spec {
+		if after, ok := strings.CutPrefix(s, "group:"); ok {
+			if members, ok := toolGroups[after]; ok {
+				for _, m := range members {
+					if m == name {
+						return true
+					}
+				}
+			}
+		} else if s == name {
+			return true
+		}
+	}
+	return false
 }
 
 func resolveAlias(name string) string {

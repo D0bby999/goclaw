@@ -107,12 +107,32 @@ const (
 	MethodTeamsGet      = "teams.get"
 	MethodTeamsDelete   = "teams.delete"
 	MethodTeamsTaskList      = "teams.tasks.list"
+	MethodTeamsTaskGet       = "teams.tasks.get"
 	MethodTeamsTaskApprove   = "teams.tasks.approve"
 	MethodTeamsTaskReject    = "teams.tasks.reject"
+	MethodTeamsTaskComment   = "teams.tasks.comment"
+	MethodTeamsTaskComments  = "teams.tasks.comments"
+	MethodTeamsTaskEvents    = "teams.tasks.events"
+	MethodTeamsTaskCreate    = "teams.tasks.create"
+	MethodTeamsTaskDelete    = "teams.tasks.delete"
+	MethodTeamsTaskAssign    = "teams.tasks.assign"
 	MethodTeamsMembersAdd    = "teams.members.add"
 	MethodTeamsMembersRemove = "teams.members.remove"
 	MethodTeamsUpdate        = "teams.update"
 	MethodTeamsKnownUsers    = "teams.known_users"
+	MethodTeamsScopes        = "teams.scopes"
+)
+
+// Team workspace
+const (
+	MethodTeamsWorkspaceList   = "teams.workspace.list"
+	MethodTeamsWorkspaceRead   = "teams.workspace.read"
+	MethodTeamsWorkspaceDelete = "teams.workspace.delete"
+)
+
+// Team events
+const (
+	MethodTeamsEventsList = "teams.events.list"
 )
 
 // Delegation history
@@ -207,6 +227,13 @@ const (
 	MethodKBDocumentsDelete   = "kb.documents.delete"
 	MethodKBDocumentsReprocess = "kb.documents.reprocess"
 	MethodKBSearch            = "kb.search"
+)
+
+// API key management
+const (
+	MethodAPIKeysList   = "api_keys.list"
+	MethodAPIKeysCreate = "api_keys.create"
+	MethodAPIKeysRevoke = "api_keys.revoke"
 )
 
 // Phase 3+ - NICE TO HAVE methods
