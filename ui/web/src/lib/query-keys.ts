@@ -104,6 +104,10 @@ export const queryKeys = {
     documents: (collectionId: string) => ["kb", "documents", collectionId] as const,
     document: (documentId: string) => ["kb", "document", documentId] as const,
   },
+  packages: {
+    all: ["packages"] as const,
+    runtimes: ["packages", "runtimes"] as const,
+  },
   kg: {
     all: ["kg"] as const,
     list: (filters: { agentId: string; userId?: string; entityType?: string; query?: string }) => ["kg", "list", filters] as const,

@@ -52,6 +52,7 @@ type Server struct {
 	projectsHandler         *httpapi.ProjectsHandler         // projects orchestration API
 	pendingMessagesHandler  *httpapi.PendingMessagesHandler  // pending messages API
 	secureCLIHandler       *httpapi.SecureCLIHandler        // secure CLI credential CRUD API
+	packagesHandler        *httpapi.PackagesHandler         // runtime package management API
 	memoryHandler           *httpapi.MemoryHandler           // memory management API
 	kgHandler               *httpapi.KnowledgeGraphHandler   // knowledge graph API
 	oauthHandler            *httpapi.OAuthHandler            // OAuth endpoints
@@ -288,6 +289,10 @@ func (s *Server) BuildMux() *http.ServeMux {
 
 	if s.usageHandler != nil {
 		s.usageHandler.RegisterRoutes(mux)
+	}
+
+	if s.packagesHandler != nil {
+		s.packagesHandler.RegisterRoutes(mux)
 	}
 
 	// API documentation (OpenAPI spec + Swagger UI)
@@ -539,6 +544,9 @@ func (s *Server) SetProjectsHandler(h *httpapi.ProjectsHandler) { s.projectsHand
 
 // SetSecureCLIHandler sets the secure CLI credential CRUD handler.
 func (s *Server) SetSecureCLIHandler(h *httpapi.SecureCLIHandler) { s.secureCLIHandler = h }
+
+// SetPackagesHandler sets the runtime package management handler.
+func (s *Server) SetPackagesHandler(h *httpapi.PackagesHandler) { s.packagesHandler = h }
 
 // SetOAuthHandler sets the OAuth handler (available in all modes).
 func (s *Server) SetOAuthHandler(h *httpapi.OAuthHandler) { s.oauthHandler = h }

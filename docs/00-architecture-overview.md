@@ -61,12 +61,6 @@ flowchart TD
         CT[Custom Tools]
     end
 
-    subgraph Hooks["Hook Engine"]
-        HE[Engine]
-        CMD_E[Command Evaluator]
-        AGT_E[Agent Evaluator]
-    end
-
     subgraph Store["Store Layer"]
         SESS[SessionStore]
         AGENT_S[AgentStore]
@@ -97,8 +91,6 @@ flowchart TD
     LOOP --> Providers
     LOOP --> Tools
     Tools --> Store
-    Tools --> Hooks
-    Hooks --> Tools
     LOOP --> Store
 ```
 
@@ -115,7 +107,6 @@ flowchart TD
 | `internal/claudecode/` | Claude Code orchestration: process manager, stream parser, work directory validation, git worktree support |
 | `internal/tools/dynamic_loader.go` | Custom tool loader: LoadGlobal (startup), LoadForAgent (per-agent clone), ReloadGlobal (cache invalidation) |
 | `internal/tools/dynamic_tool.go` | Custom tool executor: command template rendering, shell escaping, encrypted env vars |
-| `internal/hooks/` | Hook engine: quality gates, command evaluator, agent evaluator, recursion prevention (`WithSkipHooks`) |
 | `internal/store/` | Store interfaces: SessionStore, AgentStore, ProviderStore, SkillStore, MemoryStore, CronStore, PairingStore, TracingStore, MCPServerStore, TeamStore, ChannelInstanceStore, ConfigSecretsStore |
 | `internal/store/pg/` | PostgreSQL implementations (`database/sql` + `pgx/v5`) |
 | `internal/bootstrap/` | System prompt files (AGENTS.md, SOUL.md, TOOLS.md, IDENTITY.md, USER.md, BOOTSTRAP.md) + seeding + truncation |
@@ -135,7 +126,6 @@ flowchart TD
 | `internal/tracing/otelexport/` | Optional OpenTelemetry OTLP exporter (opt-in via build tags; adds gRPC + protobuf) |
 | `internal/cache/` | Caching layer for agent state and provider responses |
 | `internal/bus/` | Event pub/sub message bus for inter-component communication |
-| `internal/hooks/` | Hook system for extensibility: command evaluator, agent evaluator, quality gates |
 | `internal/knowledgegraph/` | Knowledge graph storage and traversal |
 | `internal/mcp/` | Model Context Protocol bridge/server (stdio, SSE, streamable-HTTP) |
 | `internal/media/` | Media handling utilities |
@@ -258,8 +248,7 @@ flowchart TD
     W7["7. Cache Invalidation Subscribers<br/>Subscribe to MessageBus events"] --> W8
     W8["8. Delegation Tools<br/>DelegateManager + agent links"] --> W9
     W9["9. Team Tools<br/>team_tasks + team_message + team auto-linking"] --> W10
-    W10["10. Hook Engine<br/>Quality gates with command + agent evaluators"] --> W11
-    W11["11. Team Mailbox<br/>team_message tool for peer communication"]
+    W10["10. Team Mailbox<br/>team_message tool for peer communication"]
 ```
 
 ### Cache Invalidation Events
@@ -416,10 +405,6 @@ flowchart TD
 | `internal/gateway/router.go` | RPC method routing |
 | `internal/scheduler/lanes.go` | Lane definitions, semaphore-based concurrency |
 | `internal/scheduler/queue.go` | Per-session queue, queue modes, debounce |
-| `internal/hooks/engine.go` | Hook engine: evaluator registry, `EvaluateHooks` |
-| `internal/hooks/command_evaluator.go` | Shell command evaluator (exit 0 = pass) |
-| `internal/hooks/agent_evaluator.go` | Agent delegation evaluator (APPROVED/REJECTED) |
-| `internal/hooks/context.go` | `WithSkipHooks` / `SkipHooksFromContext` (recursion prevention) |
 | `internal/store/stores.go` | `Stores` container struct (all 22+ store interfaces) |
 | `internal/store/types.go` | `StoreConfig`, `BaseModel` |
 
