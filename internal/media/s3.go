@@ -90,7 +90,7 @@ func NewS3Storage(cfg S3Config) (*S3Storage, error) {
 // SaveFile uploads a file to S3. Returns media ID.
 func (s *S3Storage) SaveFile(sessionKey, srcPath, mimeType string) (string, error) {
 	mediaID := uuid.New().String()
-	ext := extFromMime(mimeType)
+	ext := ExtFromMime(mimeType)
 	if ext == "" {
 		ext = filepath.Ext(srcPath)
 	}

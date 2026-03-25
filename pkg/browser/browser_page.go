@@ -11,8 +11,9 @@ import (
 
 // Snapshot takes an accessibility snapshot of a page.
 func (m *Manager) Snapshot(ctx context.Context, targetID string, opts SnapshotOptions) (*SnapshotResult, error) {
+	tenantID := tenantIDFromCtx(ctx)
 	m.mu.Lock()
-	page, err := m.getPage(targetID)
+	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 
 	if err != nil {
@@ -40,8 +41,9 @@ func (m *Manager) Snapshot(ctx context.Context, targetID string, opts SnapshotOp
 
 // Screenshot captures a page screenshot as PNG bytes.
 func (m *Manager) Screenshot(ctx context.Context, targetID string, fullPage bool) ([]byte, error) {
+	tenantID := tenantIDFromCtx(ctx)
 	m.mu.Lock()
-	page, err := m.getPage(targetID)
+	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 
 	if err != nil {
@@ -58,8 +60,9 @@ func (m *Manager) Screenshot(ctx context.Context, targetID string, fullPage bool
 
 // Navigate navigates a page to a URL.
 func (m *Manager) Navigate(ctx context.Context, targetID, url string) error {
+	tenantID := tenantIDFromCtx(ctx)
 	m.mu.Lock()
-	page, err := m.getPage(targetID)
+	page, err := m.getPageForTenant(targetID, tenantID)
 	m.mu.Unlock()
 
 	if err != nil {

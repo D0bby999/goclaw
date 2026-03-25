@@ -155,21 +155,13 @@ export function useCron() {
   );
 
   const updateJob = useCallback(
-    async (jobId: string, params: {
-      name?: string;
-      schedule?: CronSchedule;
-      message?: string;
-      agentId?: string;
-      deliver?: boolean;
-      channel?: string;
-      to?: string;
-    }) => {
+    async (jobId: string, params: Record<string, unknown>) => {
       try {
-        await ws.call(Methods.CRON_UPDATE, { jobId, patch: params });
+        await ws.call(Methods.CRON_UPDATE, { jobId, ...params });
         await invalidate();
-        toast.success("Cron job updated");
+        toast.success(i18next.t("cron:toast.updated"));
       } catch (err) {
-        toast.error("Failed to update cron job", err instanceof Error ? err.message : "Unknown error");
+        toast.error(i18next.t("cron:toast.failedUpdate"), err instanceof Error ? err.message : "");
         throw err;
       }
     },

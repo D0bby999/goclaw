@@ -74,7 +74,7 @@ func (m *ContentScheduleMethods) handleUpdate(_ context.Context, client *gateway
 		patch := store.CronJobPatch{
 			Schedule: &store.CronSchedule{Kind: "cron", Expr: expr, TZ: tz},
 		}
-		_, _ = m.cronSvc.UpdateJob(*existing.CronJobID, patch)
+		_, _ = m.cronSvc.UpdateJob(context.Background(), *existing.CronJobID, patch)
 	}
 
 	if params.PageIDs != nil {
@@ -119,7 +119,7 @@ func (m *ContentScheduleMethods) handleDelete(_ context.Context, client *gateway
 	}
 
 	if existing.CronJobID != nil {
-		_ = m.cronSvc.RemoveJob(*existing.CronJobID)
+		_ = m.cronSvc.RemoveJob(context.Background(), *existing.CronJobID)
 	}
 
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]string{"status": "deleted"}))
@@ -156,7 +156,7 @@ func (m *ContentScheduleMethods) handleToggle(_ context.Context, client *gateway
 	}
 
 	if existing.CronJobID != nil {
-		_ = m.cronSvc.EnableJob(*existing.CronJobID, params.Enabled)
+		_ = m.cronSvc.EnableJob(context.Background(), *existing.CronJobID, params.Enabled)
 	}
 
 	client.SendResponse(protocol.NewOKResponse(req.ID, map[string]any{"id": params.ID, "enabled": params.Enabled}))

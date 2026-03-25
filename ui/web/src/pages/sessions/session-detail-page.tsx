@@ -13,19 +13,25 @@ import { parseSessionKey } from "@/lib/session-key";
 import { formatDate, formatTokens } from "@/lib/format";
 import type { SessionInfo, SessionPreview, Message } from "@/types/session";
 import type { ChatMessage, AgentEventPayload, ToolStreamEntry } from "@/types/chat";
+import { messageToTimestamp } from "@/lib/message-utils";
 
 /** Check if a message is an internal system message (subagent results, cron, etc.) */
 function isSystemMessage(msg: ChatMessage): boolean {
-  return msg.content?.trimStart().startsWith("[System Message]") ?? false;
+  const c = msg.content?.trimStart() ?? "";
+  return c.startsWith("[System Message]") || c.startsWith("[System]");
 }
 
 /** Check if a message should be displayed */
 function isDisplayable(msg: ChatMessage): boolean {
   // Hide tool role messages (shown inline with assistant)
   if (msg.role === "tool") return false;
-  // Hide messages with empty/whitespace content
-  if (!msg.content?.trim()) return false;
-  return true;
+  // Show if there is text content
+  if (msg.content?.trim()) return true;
+  // Assistant messages with tool calls or thinking should still be displayed
+  if (msg.role === "assistant") {
+    return !!(msg.toolDetails?.length || msg.tool_calls?.length || msg.thinking?.trim());
+  }
+  return false;
 }
 
 interface SessionDetailPageProps {
@@ -72,7 +78,7 @@ export function SessionDetailPage({
             allMsgs.map((m, i) => {
               const chatMsg: ChatMessage = {
                 ...m,
-                timestamp: Date.now() - (allMsgs.length - i) * 1000,
+                timestamp: messageToTimestamp(m, i, allMsgs.length),
               };
               // Reconstruct toolDetails for assistant messages with tool_calls
               if (m.role === "assistant" && m.tool_calls && m.tool_calls.length > 0) {
@@ -136,7 +142,7 @@ export function SessionDetailPage({
               <div className="flex items-center gap-1">
                 <input
                   autoFocus
-                  className="h-7 rounded border bg-background px-2 text-sm font-medium outline-none focus:ring-1 focus:ring-ring"
+                  className="h-7 rounded border bg-background px-2 text-base md:text-sm font-medium outline-none focus:ring-1 focus:ring-ring"
                   value={titleDraft}
                   onChange={(e) => setTitleDraft(e.target.value)}
                   onKeyDown={(e) => {

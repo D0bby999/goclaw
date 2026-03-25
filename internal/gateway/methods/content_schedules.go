@@ -109,7 +109,7 @@ func (m *ContentScheduleMethods) handleCreate(_ context.Context, client *gateway
 	jobName := "sched-" + data.ID.String()[:8]
 	msg := "{internal:content_schedule:" + data.ID.String() + "}"
 	sched := store.CronSchedule{Kind: "cron", Expr: params.CronExpression, TZ: tz}
-	job, err := m.cronSvc.AddJob(jobName, sched, msg, false, "", "", "", "")
+	job, err := m.cronSvc.AddJob(context.Background(), jobName, sched, msg, false, "", "", "", "")
 	if err == nil {
 		_ = m.store.Update(context.Background(), data.ID, map[string]any{"cron_job_id": job.ID})
 		data.CronJobID = &job.ID

@@ -2,6 +2,7 @@ package cmd
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"log/slog"
 	"os"
@@ -28,6 +29,7 @@ import (
 	zalopersonal "github.com/nextlevelbuilder/goclaw/internal/channels/zalo/personal"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway"
+	"github.com/nextlevelbuilder/goclaw/internal/heartbeat"
 	"github.com/nextlevelbuilder/goclaw/internal/gateway/methods"
 	mcpbridge "github.com/nextlevelbuilder/goclaw/internal/mcp"
 	"github.com/nextlevelbuilder/goclaw/internal/media"
@@ -49,6 +51,21 @@ func runGateway() {
 	if verbose {
 		logLevel = slog.LevelDebug
 	}
+	// Env override (docker/K8s friendly, default: info): GOCLAW_LOG_LEVEL=debug|info|warn|error
+	if lvl := os.Getenv("GOCLAW_LOG_LEVEL"); lvl != "" {
+		switch strings.ToLower(lvl) {
+		case "debug":
+			logLevel = slog.LevelDebug
+		case "info":
+			logLevel = slog.LevelInfo
+		case "warn":
+			logLevel = slog.LevelWarn
+		case "error":
+			logLevel = slog.LevelError
+		default:
+			fmt.Fprintf(os.Stderr, "warning: unknown GOCLAW_LOG_LEVEL=%q, using info\n", lvl)
+		}
+	}
 	textHandler := slog.NewTextHandler(os.Stdout, &slog.HandlerOptions{
 		Level: logLevel,
 	})
@@ -68,7 +85,7 @@ func runGateway() {
 	msgBus := bus.New()
 
 	// Create provider registry
-	providerRegistry := providers.NewRegistry()
+	providerRegistry := providers.NewRegistry(store.TenantIDFromContext)
 	registerProviders(providerRegistry, cfg)
 
 	// Resolve workspace (must be absolute for system prompt + file tool path resolution)
@@ -83,7 +100,7 @@ func runGateway() {
 	// Detect server IPs for output scrubbing (prevents IP leaks via web_fetch, exec, etc.)
 	tools.DetectServerIPs(context.Background())
 
-	toolsReg, execApprovalMgr, mcpMgr, sandboxMgr, browserMgr, webFetchTool, permPE, toolPE, dataDir, agentCfg := setupToolRegistry(cfg, workspace, providerRegistry)
+	toolsReg, execApprovalMgr, mcpMgr, sandboxMgr, browserMgr, webFetchTool, ttsTool, permPE, toolPE, dataDir, agentCfg := setupToolRegistry(cfg, workspace, providerRegistry)
 	if browserMgr != nil {
 		defer browserMgr.Close()
 	}
@@ -139,10 +156,29 @@ func runGateway() {
 	// Register providers from DB (overrides config providers).
 	if pgStores.Providers != nil {
 		dbGatewayAddr := loopbackAddr(cfg.Gateway.Host, cfg.Gateway.Port)
-		registerProvidersFromDB(providerRegistry, pgStores.Providers, pgStores.ConfigSecrets, dbGatewayAddr, cfg.Gateway.Token, pgStores.MCP)
+		registerProvidersFromDB(providerRegistry, pgStores.Providers, pgStores.ConfigSecrets, dbGatewayAddr, cfg.Gateway.Token, pgStores.MCP, cfg)
 	}
 
-	setupMemoryEmbeddings(cfg, pgStores, providerRegistry)
+	// Warn if deprecated session scope settings are configured
+	if cfg.Sessions.Scope != "" && cfg.Sessions.Scope != "per-sender" {
+		slog.Warn("sessions.scope config is deprecated and ignored — fixed to per-sender", "configured", cfg.Sessions.Scope)
+	}
+	if cfg.Sessions.DmScope != "" && cfg.Sessions.DmScope != "per-channel-peer" {
+		slog.Warn("sessions.dm_scope config is deprecated and ignored — fixed to per-channel-peer", "configured", cfg.Sessions.DmScope)
+	}
+
+	seedSystemConfigs(pgStores.SystemConfigs, pgStores.Tenants, cfg)
+	// Read back system_configs from DB and overlay onto in-memory config.
+	// This ensures runtime components read DB values via cfg.* without needing direct DB access.
+	if pgStores.SystemConfigs != nil {
+		if sysConfigs, err := pgStores.SystemConfigs.List(
+			store.WithTenantID(context.Background(), store.MasterTenantID),
+		); err == nil && len(sysConfigs) > 0 {
+			cfg.ApplySystemConfigs(sysConfigs)
+			slog.Info("system_configs applied to in-memory config", "keys", len(sysConfigs))
+		}
+	}
+	setupMemoryEmbeddings(pgStores, providerRegistry)
 
 	loadBootstrapFiles(pgStores, workspace, agentCfg)
 
@@ -152,8 +188,8 @@ func runGateway() {
 		// Wire announce queue for batched subagent result delivery (matching TS debounce pattern)
 		announceQueue := tools.NewAnnounceQueue(1000, 20,
 			func(sessionKey string, items []tools.AnnounceQueueItem, meta tools.AnnounceMetadata) {
-				remainingActive := subagentMgr.CountRunningForParent(meta.ParentAgent)
-				content := tools.FormatBatchedAnnounce(items, remainingActive)
+				roster := subagentMgr.RosterForParent(meta.ParentAgent)
+				content := tools.FormatBatchedAnnounce(items, roster)
 				senderID := fmt.Sprintf("subagent:batch-%d", len(items))
 				label := items[0].Label
 				if len(items) > 1 {
@@ -178,18 +214,23 @@ func runGateway() {
 				for _, item := range items {
 					batchMedia = append(batchMedia, item.Media...)
 				}
+				// Notify clients that leader is processing team results
+				// (bridges UI gap between last task.completed and announce run.started).
+				bus.BroadcastForTenant(msgBus, protocol.EventTeamLeaderProcessing, meta.OriginTenantID, map[string]any{
+					"agentId": meta.ParentAgent,
+					"tasks":   len(items),
+				})
+
 				msgBus.PublishInbound(bus.InboundMessage{
 					Channel:  "system",
 					SenderID: senderID,
 					ChatID:   meta.OriginChatID,
 					Content:  content,
 					UserID:   meta.OriginUserID,
+					TenantID: meta.OriginTenantID,
 					Metadata: batchMeta,
 					Media:    batchMedia,
 				})
-			},
-			func(parentID string) int {
-				return subagentMgr.CountRunningForParent(parentID)
 			},
 		)
 		subagentMgr.SetAnnounceQueue(announceQueue)
@@ -198,7 +239,7 @@ func runGateway() {
 		slog.Info("subagent system enabled", "tools", []string{"spawn"})
 	}
 
-	skillsLoader, skillSearchTool, globalSkillsDir := setupSkillsSystem(cfg, workspace, dataDir, pgStores, toolsReg, providerRegistry, msgBus)
+	skillsLoader, skillSearchTool, globalSkillsDir, bundledSkillsDir, builtinSkillsDir := setupSkillsSystem(cfg, workspace, dataDir, pgStores, toolsReg, providerRegistry, msgBus)
 	_ = skillSearchTool // used via wireExtras → skillsLoader; kept for type clarity
 
 	// DateTime tool (precise time for cron scheduling, memory timestamps, etc.)
@@ -207,6 +248,12 @@ func runGateway() {
 	// Cron tool (agent-facing, matching TS cron-tool.ts)
 	toolsReg.Register(tools.NewCronTool(pgStores.Cron))
 	slog.Info("cron tool registered")
+
+	// Heartbeat tool (agent-facing)
+	heartbeatTool := tools.NewHeartbeatTool(pgStores.Heartbeats, pgStores.ConfigPermissions)
+	heartbeatTool.SetAgentStore(pgStores.Agents)
+	toolsReg.Register(heartbeatTool)
+	slog.Info("heartbeat tool registered")
 
 	// News tool (unified: save, query, sources, ideas)
 	toolsReg.Register(tools.NewNewsTool(pgStores.News))
@@ -249,6 +296,8 @@ func runGateway() {
 
 	// Message tool (send to channels)
 	toolsReg.Register(tools.NewMessageTool(workspace, agentCfg.RestrictToWorkspace))
+	// Group members tool (list members in group chats)
+	toolsReg.Register(tools.NewListGroupMembersTool())
 	slog.Info("session + message tools registered")
 
 	// Register legacy tool aliases (backward-compat names from policy.go).
@@ -288,6 +337,10 @@ func runGateway() {
 			if pgStores.Skills != nil {
 				pa.AllowPaths(pgStores.Skills.Dirs()...)
 			}
+			// Allow builtin skills dir (fallback when managed copy is missing).
+			pa.AllowPaths(builtinSkillsDir)
+			// Allow tenant-scoped skills-store dirs (dataDir/tenants/{slug}/skills-store/).
+			pa.AllowPaths(filepath.Join(dataDir, "tenants"))
 		}
 	}
 
@@ -323,7 +376,7 @@ func runGateway() {
 	server.SetPolicyEngine(permPE)
 	server.SetPairingService(pgStores.Pairing)
 	server.SetMessageBus(msgBus)
-	server.SetOAuthHandler(httpapi.NewOAuthHandler(cfg.Gateway.Token, pgStores.Providers, pgStores.ConfigSecrets, providerRegistry, msgBus))
+	server.SetOAuthHandler(httpapi.NewOAuthHandler(pgStores.Providers, pgStores.ConfigSecrets, providerRegistry, msgBus))
 
 	// contextFileInterceptor is created inside wireExtras.
 	// Declared here so it can be passed to registerAllMethods → AgentsMethods
@@ -337,19 +390,10 @@ func runGateway() {
 		server.SetAgentStore(pgStores.Agents)
 	}
 
-	// Dynamic custom tools: load global tools from DB before resolver
-	var dynamicLoader *tools.DynamicToolLoader
-	if pgStores.CustomTools != nil {
-		dynamicLoader = tools.NewDynamicToolLoader(pgStores.CustomTools, workspace)
-		if err := dynamicLoader.LoadGlobal(context.Background(), toolsReg); err != nil {
-			slog.Warn("failed to load global custom tools", "error", err)
-		}
-	}
-
 	var mcpPool *mcpbridge.Pool
 	var mediaStore media.Storage
 	var postTurn tools.PostTurnProcessor
-	contextFileInterceptor, mcpPool, mediaStore, postTurn = wireExtras(pgStores, agentRouter, providerRegistry, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, dynamicLoader, redisClient)
+	contextFileInterceptor, mcpPool, mediaStore, postTurn = wireExtras(pgStores, agentRouter, providerRegistry, msgBus, pgStores.Sessions, toolsReg, toolPE, skillsLoader, hasMemory, traceCollector, workspace, cfg.Gateway.InjectionAction, cfg, sandboxMgr, redisClient)
 	if mcpPool != nil {
 		defer mcpPool.Stop()
 	}
@@ -358,7 +402,11 @@ func runGateway() {
 	if mcpMgr != nil {
 		mcpToolLister = mcpMgr
 	}
-	agentsH, skillsH, tracesH, mcpH, customToolsH, channelInstancesH, providersH, delegationsH, builtinToolsH, pendingMessagesH, teamEventsH, secureCLIH := wireHTTP(pgStores, cfg.Gateway.Token, cfg.Agents.Defaults.Workspace, msgBus, toolsReg, providerRegistry, permPE.IsOwner, gatewayAddr, mcpToolLister)
+	httpapi.InitGatewayToken(cfg.Gateway.Token)
+	agentsH, skillsH, tracesH, mcpH, channelInstancesH, providersH, builtinToolsH, pendingMessagesH, teamEventsH, secureCLIH, mcpUserCredsH := wireHTTP(pgStores, cfg.Agents.Defaults.Workspace, dataDir, bundledSkillsDir, msgBus, toolsReg, providerRegistry, permPE.IsOwner, gatewayAddr, mcpToolLister)
+	if providersH != nil {
+		providersH.SetAPIBaseFallback(cfg.Providers.APIBaseForType)
+	}
 	if agentsH != nil {
 		server.SetAgentsHandler(agentsH)
 	}
@@ -369,13 +417,19 @@ func runGateway() {
 		server.SetTracesHandler(tracesH)
 	}
 	// External wake/trigger API
-	wakeH := httpapi.NewWakeHandler(agentRouter, cfg.Gateway.Token)
+	wakeH := httpapi.NewWakeHandler(agentRouter)
+	if postTurn != nil {
+		wakeH.SetPostTurnProcessor(postTurn)
+	}
 	server.SetWakeHandler(wakeH)
 	if mcpH != nil {
+		if mcpPool != nil {
+			mcpH.SetPoolEvictor(mcpPool)
+		}
 		server.SetMCPHandler(mcpH)
 	}
-	if customToolsH != nil {
-		server.SetCustomToolsHandler(customToolsH)
+	if mcpUserCredsH != nil {
+		server.SetMCPUserCredentialsHandler(mcpUserCredsH)
 	}
 	if channelInstancesH != nil {
 		server.SetChannelInstancesHandler(channelInstancesH)
@@ -383,11 +437,12 @@ func runGateway() {
 	if providersH != nil {
 		server.SetProvidersHandler(providersH)
 	}
-	if delegationsH != nil {
-		server.SetDelegationsHandler(delegationsH)
-	}
 	if teamEventsH != nil {
 		server.SetTeamEventsHandler(teamEventsH)
+	}
+	if pgStores != nil && pgStores.Teams != nil {
+		server.SetTeamAttachmentsHandler(httpapi.NewTeamAttachmentsHandler(pgStores.Teams, workspace))
+		server.SetWorkspaceUploadHandler(httpapi.NewWorkspaceUploadHandler(pgStores.Teams, workspace, msgBus))
 	}
 	if builtinToolsH != nil {
 		server.SetBuiltinToolsHandler(builtinToolsH)
@@ -407,23 +462,43 @@ func runGateway() {
 
 	// Activity audit log API
 	if pgStores.Activity != nil {
-		server.SetActivityHandler(httpapi.NewActivityHandler(pgStores.Activity, cfg.Gateway.Token))
+		server.SetActivityHandler(httpapi.NewActivityHandler(pgStores.Activity))
+	}
+
+	// System configs API
+	if pgStores.SystemConfigs != nil {
+		server.SetSystemConfigsHandler(httpapi.NewSystemConfigsHandler(pgStores.SystemConfigs, msgBus))
+
+		// Refresh in-memory config when system_configs change via HTTP API
+		msgBus.Subscribe(bus.TopicSystemConfigChanged, func(evt bus.Event) {
+			// Use tenant context from the request that triggered the change
+			ctx := context.Background()
+			if reqCtx, ok := evt.Payload.(context.Context); ok {
+				ctx = reqCtx
+			} else {
+				ctx = store.WithTenantID(ctx, store.MasterTenantID)
+			}
+			if sysConfigs, err := pgStores.SystemConfigs.List(ctx); err == nil && len(sysConfigs) > 0 {
+				cfg.ApplySystemConfigs(sysConfigs)
+				slog.Debug("system_configs refreshed to in-memory config", "keys", len(sysConfigs))
+			}
+		})
 	}
 
 	// Usage analytics API
 	if pgStores.Snapshots != nil {
-		server.SetUsageHandler(httpapi.NewUsageHandler(pgStores.Snapshots, pgStores.DB, cfg.Gateway.Token))
+		server.SetUsageHandler(httpapi.NewUsageHandler(pgStores.Snapshots, pgStores.DB))
 	}
 
 	// Runtime package management (install/uninstall system/pip/npm packages)
-	server.SetPackagesHandler(httpapi.NewPackagesHandler(cfg.Gateway.Token))
+	server.SetPackagesHandler(httpapi.NewPackagesHandler())
 
 	// API key management
 	// API documentation (OpenAPI spec + Swagger UI at /docs)
-	server.SetDocsHandler(httpapi.NewDocsHandler(cfg.Gateway.Token))
+	server.SetDocsHandler(httpapi.NewDocsHandler())
 
 	if pgStores != nil && pgStores.APIKeys != nil {
-		server.SetAPIKeysHandler(httpapi.NewAPIKeysHandler(pgStores.APIKeys, cfg.Gateway.Token, msgBus))
+		server.SetAPIKeysHandler(httpapi.NewAPIKeysHandler(pgStores.APIKeys, msgBus))
 		server.SetAPIKeyStore(pgStores.APIKeys)
 		httpapi.InitAPIKeyCache(pgStores.APIKeys, msgBus)
 	}
@@ -435,32 +510,36 @@ func runGateway() {
 
 	// Memory management API (wired directly, only needs MemoryStore + token)
 	if pgStores != nil && pgStores.Memory != nil {
-		server.SetMemoryHandler(httpapi.NewMemoryHandler(pgStores.Memory, cfg.Gateway.Token))
+		server.SetMemoryHandler(httpapi.NewMemoryHandler(pgStores.Memory))
 	}
 
 	// Knowledge Base API (RAG: upload, process, search)
 	var kbProc *kb.Processor
 	if pgStores != nil && pgStores.KB != nil && mediaStore != nil {
-		memCfg := cfg.Agents.Defaults.Memory
 		var kbEmbProvider store.EmbeddingProvider
-		if ep := resolveEmbeddingProvider(cfg, memCfg, providerRegistry); ep != nil {
+		if ep := resolveEmbeddingProvider(pgStores.Providers, providerRegistry, pgStores.SystemConfigs); ep != nil {
 			kbEmbProvider = ep
 		}
 		kbProc = kb.NewProcessor(pgStores.KB, mediaStore, kbEmbProvider)
 		server.SetKBHandler(httpapi.NewKBHandler(pgStores.KB, kbProc, mediaStore, cfg.Gateway.Token))
 	}
 
+	// Knowledge graph API
+	if pgStores != nil && pgStores.KnowledgeGraph != nil {
+		server.SetKnowledgeGraphHandler(httpapi.NewKnowledgeGraphHandler(pgStores.KnowledgeGraph, providerRegistry))
+	}
+
 	// Workspace file serving endpoint — serves files by absolute path, auth-token protected.
 	// Supports media from any agent workspace (each agent has its own workspace from DB).
-	server.SetFilesHandler(httpapi.NewFilesHandler(cfg.Gateway.Token))
+	server.SetFilesHandler(httpapi.NewFilesHandler(workspace, dataDir))
 
 	// Storage file management — browse/delete files under the resolved workspace directory.
 	// Uses GOCLAW_WORKSPACE (or default ~/.goclaw/workspace) so it works correctly
 	// in Docker deployments where volumes are mounted outside ~/.goclaw/.
-	server.SetStorageHandler(httpapi.NewStorageHandler(workspace, cfg.Gateway.Token))
+	server.SetStorageHandler(httpapi.NewStorageHandler(workspace))
 
 	// Media upload endpoint — accepts multipart file uploads, returns temp path + MIME type.
-	server.SetMediaUploadHandler(httpapi.NewMediaUploadHandler(cfg.Gateway.Token))
+	server.SetMediaUploadHandler(httpapi.NewMediaUploadHandler())
 
 	// Media serve endpoint — serves persisted media files by ID for WS/web clients.
 	if mediaStore != nil {
@@ -471,6 +550,7 @@ func runGateway() {
 	if pgStores.BuiltinTools != nil {
 		seedBuiltinTools(context.Background(), pgStores.BuiltinTools)
 		migrateBuiltinToolSettings(context.Background(), pgStores.BuiltinTools)
+		backfillWebFetchSettings(context.Background(), pgStores.BuiltinTools)
 		applyBuiltinToolDisables(context.Background(), pgStores.BuiltinTools, toolsReg)
 	}
 
@@ -589,7 +669,7 @@ func runGateway() {
 
 	// Register all RPC methods
 	server.SetLogTee(logTee)
-	pairingMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee, browserMgr, scraperCookieStore, pgStores.News, pgStores.Notifications)
+	pairingMethods, heartbeatMethods, chatMethods := registerAllMethods(server, agentRouter, pgStores.Sessions, pgStores.Cron, pgStores.Pairing, cfg, cfgPath, workspace, dataDir, msgBus, execApprovalMgr, pgStores.Agents, pgStores.Skills, pgStores.ConfigSecrets, pgStores.Teams, contextFileInterceptor, logTee, pgStores.Heartbeats, pgStores.ConfigPermissions, pgStores.SystemConfigs, pgStores.Tenants, browserMgr, scraperCookieStore, pgStores.News, pgStores.Notifications)
 
 	// Knowledge Base RPC methods
 	if pgStores.KB != nil && kbProc != nil {
@@ -611,6 +691,13 @@ func runGateway() {
 	server.SetAnalyticsHandler(analyticsHandler)
 	slog.Info("analytics HTTP API registered")
 
+	// Wire post-turn processor for team task dispatch (WS chat.send + HTTP API paths).
+	if postTurn != nil {
+		chatMethods.SetPostTurnProcessor(postTurn)
+		server.SetPostTurnProcessor(postTurn) // HTTP: /v1/chat/completions, /v1/responses
+		wakeH.SetPostTurnProcessor(postTurn)  // HTTP: /v1/agents/{id}/wake
+	}
+
 	// Wire pairing event broadcasts to all WS clients.
 	pairingMethods.SetBroadcaster(server.BroadcastEvent)
 	if ps, ok := pgStores.Pairing.(*pg.PGPairingStore); ok {
@@ -630,18 +717,26 @@ func runGateway() {
 			cs.SetChannelSender(channelMgr.SendToChannel)
 		}
 	}
+	// Wire group member lister on list_group_members tool
+	if t, ok := toolsReg.Get("list_group_members"); ok {
+		if gl, ok := t.(tools.GroupMemberListerAware); ok {
+			gl.SetGroupMemberLister(channelMgr.ListGroupMembers)
+		}
+	}
 
 	// Load channel instances from DB.
 	var instanceLoader *channels.InstanceLoader
 	if pgStores.ChannelInstances != nil {
 		instanceLoader = channels.NewInstanceLoader(pgStores.ChannelInstances, pgStores.Agents, channelMgr, msgBus, pgStores.Pairing)
+		instanceLoader.SetProviderRegistry(providerRegistry)
+		instanceLoader.SetPendingCompactionConfig(cfg.Channels.PendingCompaction)
 		// Use projects-enabled factory if project manager is available
 		if projectManagerForShutdown != nil && projectStoreForChannels != nil {
-			instanceLoader.RegisterFactory(channels.TypeTelegram, telegram.FactoryWithAllStores(pgStores.Agents, pgStores.Teams, projectStoreForChannels, projectManagerForShutdown, pgStores.News, pgStores.Social, socialManager, pgStores.PendingMessages))
+			instanceLoader.RegisterFactory(channels.TypeTelegram, telegram.FactoryWithAllStores(pgStores.Agents, pgStores.ConfigPermissions, pgStores.Teams, projectStoreForChannels, projectManagerForShutdown, pgStores.News, pgStores.Social, socialManager, pgStores.PendingMessages))
 		} else {
-			instanceLoader.RegisterFactory(channels.TypeTelegram, telegram.FactoryWithAllStores(pgStores.Agents, pgStores.Teams, nil, nil, pgStores.News, pgStores.Social, socialManager, pgStores.PendingMessages))
+			instanceLoader.RegisterFactory(channels.TypeTelegram, telegram.FactoryWithAllStores(pgStores.Agents, pgStores.ConfigPermissions, pgStores.Teams, nil, nil, pgStores.News, pgStores.Social, socialManager, pgStores.PendingMessages))
 		}
-		instanceLoader.RegisterFactory(channels.TypeDiscord, discord.FactoryWithPendingStore(pgStores.PendingMessages))
+		instanceLoader.RegisterFactory(channels.TypeDiscord, discord.FactoryWithStores(pgStores.Agents, pgStores.ConfigPermissions, pgStores.PendingMessages))
 		instanceLoader.RegisterFactory(channels.TypeFeishu, feishu.FactoryWithPendingStore(pgStores.PendingMessages))
 		instanceLoader.RegisterFactory(channels.TypeZaloOA, zalo.Factory)
 		instanceLoader.RegisterFactory(channels.TypeZaloPersonal, zalopersonal.FactoryWithPendingStore(pgStores.PendingMessages))
@@ -682,7 +777,8 @@ func runGateway() {
 		})
 		go func() {
 			for payload := range auditCh {
-				if err := pgStores.Activity.Log(context.Background(), &store.ActivityLog{
+				auditCtx := store.WithTenantID(context.Background(), payload.TenantID)
+				if err := pgStores.Activity.Log(auditCtx, &store.ActivityLog{
 					ActorType:  payload.ActorType,
 					ActorID:    payload.ActorID,
 					Action:     payload.Action,
@@ -715,11 +811,31 @@ func runGateway() {
 			if err != nil {
 				return
 			}
-			if err := teamEventStore.RecordTaskEvent(context.Background(), &store.TeamTaskEventData{
+
+			// Propagate tenant from bus event to ensure correct tenant isolation.
+			auditCtx := store.WithTenantID(context.Background(), evt.TenantID)
+
+			// Populate data field with event-specific context for audit trail.
+			var data json.RawMessage
+			switch evt.Name {
+			case protocol.EventTeamTaskFailed, protocol.EventTeamTaskRejected, protocol.EventTeamTaskCancelled:
+				if payload.Reason != "" {
+					data, _ = json.Marshal(map[string]string{"reason": payload.Reason})
+				}
+			case protocol.EventTeamTaskCommented:
+				if payload.CommentText != "" {
+					data, _ = json.Marshal(map[string]string{"comment_text": payload.CommentText})
+				}
+			case protocol.EventTeamTaskProgress:
+				data, _ = json.Marshal(map[string]any{"progress_percent": payload.ProgressPercent, "progress_step": payload.ProgressStep})
+			}
+
+			if err := teamEventStore.RecordTaskEvent(auditCtx, &store.TeamTaskEventData{
 				TaskID:    taskID,
 				EventType: eventType,
 				ActorType: payload.ActorType,
 				ActorID:   payload.ActorID,
+				Data:      data,
 			}); err != nil {
 				slog.Warn("team_task_audit.record_failed", "task_id", payload.TaskID, "event", eventType, "error", err)
 			}
@@ -745,6 +861,7 @@ func runGateway() {
 					AgentID:  meta.LeadAgent,
 					UserID:   meta.UserID,
 					Content:  leaderContent,
+					Metadata: map[string]string{"run_kind": tools.RunKindNotification},
 				})
 			} else {
 				msgBus.PublishOutbound(bus.OutboundMessage{
@@ -771,6 +888,14 @@ func runGateway() {
 				notifyType = "progress"
 			case protocol.EventTeamTaskCompleted:
 				notifyType = "completed"
+			case protocol.EventTeamTaskCommented:
+				notifyType = "commented"
+			case protocol.EventTeamTaskCreated:
+				// Only notify for human-created tasks (agent-created go through dispatch).
+				if payload.ActorType != "human" {
+					return
+				}
+				notifyType = "new_task"
 			default:
 				return
 			}
@@ -779,7 +904,7 @@ func runGateway() {
 			if err != nil {
 				return
 			}
-			team, err := notifyTeamStore.GetTeam(context.Background(), teamUUID)
+			team, err := notifyTeamStore.GetTeamUnscoped(context.Background(), teamUUID)
 			if err != nil || team == nil {
 				return
 			}
@@ -803,17 +928,25 @@ func runGateway() {
 				if !cfg.Completed {
 					return
 				}
+			case "commented":
+				if !cfg.Commented {
+					return
+				}
+			case "new_task":
+				if !cfg.NewTask {
+					return
+				}
 			}
 
 			// Skip internal channels.
-			if payload.Channel == tools.ChannelSystem || payload.Channel == tools.ChannelDelegate {
+			if payload.Channel == tools.ChannelSystem || payload.Channel == tools.ChannelTeammate {
 				return
 			}
 
 			// Resolve lead agent key (needed for leader mode routing + completed-by-leader skip).
 			var leadAgentKey string
 			if notifyAgentStore != nil {
-				if la, err := notifyAgentStore.GetByID(context.Background(), team.LeadAgentID); err == nil {
+				if la, err := notifyAgentStore.GetByIDUnscoped(context.Background(), team.LeadAgentID); err == nil {
 					leadAgentKey = la.AgentKey
 				}
 			}
@@ -853,6 +986,14 @@ func runGateway() {
 					reason = reason[:200] + "..."
 				}
 				content = fmt.Sprintf("❌ Task #%d \"%s\" failed: %s", payload.TaskNumber, payload.Subject, reason)
+			case protocol.EventTeamTaskCommented:
+				actor := payload.ActorID
+				if actor == "" {
+					actor = "unknown"
+				}
+				content = fmt.Sprintf("💬 Task #%d \"%s\": comment from %s", payload.TaskNumber, payload.Subject, actor)
+			case protocol.EventTeamTaskCreated:
+				content = fmt.Sprintf("📋 New task #%d \"%s\" created", payload.TaskNumber, payload.Subject)
 			}
 
 			// In leader mode, require resolved agent key for routing.
@@ -875,6 +1016,8 @@ func runGateway() {
 	// Setup graceful shutdown
 	ctx, cancel := context.WithCancel(context.Background())
 	defer cancel()
+
+	server.StartUpdateChecker(ctx)
 
 	sigCh := make(chan os.Signal, 1)
 	signal.Notify(sigCh, syscall.SIGINT, syscall.SIGTERM)
@@ -914,7 +1057,7 @@ func runGateway() {
 	}
 
 	// Start cron service with job handler (routes through scheduler's cron lane)
-	pgStores.Cron.SetOnJob(makeCronJobHandler(sched, msgBus, cfg, channelMgr, scheduleHandler))
+	pgStores.Cron.SetOnJob(makeCronJobHandler(sched, msgBus, cfg, channelMgr, pgStores.Sessions, scheduleHandler))
 	pgStores.Cron.SetOnEvent(func(event store.CronEvent) {
 		server.BroadcastEvent(*protocol.NewEvent(protocol.EventCron, event))
 	})
@@ -922,17 +1065,43 @@ func runGateway() {
 		slog.Warn("cron service failed to start", "error", err)
 	}
 
+	// Start heartbeat ticker (routes through scheduler's cron lane)
+	heartbeatTicker := heartbeat.NewTicker(heartbeat.TickerConfig{
+		Store:    pgStores.Heartbeats,
+		Agents:   pgStores.Agents,
+		Sessions: pgStores.Sessions,
+		MsgBus:   msgBus,
+		Sched:    sched,
+		RunAgent: makeHeartbeatRunFn(sched),
+	})
+	heartbeatTicker.SetOnEvent(func(event store.HeartbeatEvent) {
+		server.BroadcastEvent(*protocol.NewEvent(protocol.EventHeartbeat, event))
+	})
+	heartbeatTicker.Start()
+
+	// Wire heartbeat wake function to tool + RPC + cron wakeMode
+	heartbeatTool.SetWakeFn(heartbeatTicker.Wake)
+	heartbeatMethods.SetWakeFn(heartbeatTicker.Wake)
+	heartbeatMethods.SetAgentStore(pgStores.Agents)
+	heartbeatMethods.SetProviderStore(pgStores.Providers)
+	cronHeartbeatWakeFn = func(agentID string) {
+		if id, err := uuid.Parse(agentID); err == nil {
+			heartbeatTicker.Wake(id)
+		}
+	}
+
 	// Adaptive throttle: reduce per-session concurrency when nearing the summary threshold.
 	// This prevents concurrent runs from racing with summarization.
 	// Uses calibrated token estimation (actual prompt tokens from last LLM call)
 	// and the agent's real context window (cached on session by the Loop).
 	sched.SetTokenEstimateFunc(func(sessionKey string) (int, int) {
-		history := pgStores.Sessions.GetHistory(sessionKey)
-		lastPT, lastMC := pgStores.Sessions.GetLastPromptTokens(sessionKey)
+		bctx := context.Background()
+		history := pgStores.Sessions.GetHistory(bctx, sessionKey)
+		lastPT, lastMC := pgStores.Sessions.GetLastPromptTokens(bctx, sessionKey)
 		tokens := agent.EstimateTokensWithCalibration(history, lastPT, lastMC)
-		cw := pgStores.Sessions.GetContextWindow(sessionKey)
+		cw := pgStores.Sessions.GetContextWindow(bctx, sessionKey)
 		if cw <= 0 {
-			cw = 200000 // fallback for sessions not yet processed
+			cw = config.DefaultContextWindow
 		}
 		return tokens, cw
 	})
@@ -975,6 +1144,9 @@ func runGateway() {
 		}
 	})
 
+	// Slow tool notification subscriber — direct outbound when tool exceeds adaptive threshold.
+	wireSlowToolNotifySubscriber(msgBus)
+
 	// Start inbound message consumer (channel → scheduler → agent → channel)
 	consumerTeamStore := pgStores.Teams
 
@@ -999,6 +1171,23 @@ func runGateway() {
 	// API key management RPC
 	if pgStores.APIKeys != nil {
 		methods.NewAPIKeysMethods(pgStores.APIKeys).Register(server.Router())
+	}
+
+	// Tenant management RPC + HTTP
+	if pgStores.Tenants != nil {
+		methods.NewTenantsMethods(pgStores.Tenants, msgBus, workspace).Register(server.Router())
+		server.SetTenantsHandler(httpapi.NewTenantsHandler(pgStores.Tenants, msgBus, workspace))
+		server.Router().SetTenantStore(pgStores.Tenants)
+		// Permission cache for tenant membership checks (tenant role, agent access, etc.)
+		permCache := cache.NewPermissionCache()
+		msgBus.Subscribe("permission-cache", func(e bus.Event) {
+			if p, ok := e.Payload.(bus.CacheInvalidatePayload); ok {
+				permCache.HandleInvalidation(p)
+			}
+		})
+		server.Router().SetPermissionCache(permCache)
+		httpapi.InitTenantStore(pgStores.Tenants, msgBus)
+		httpapi.InitOwnerIDs(cfg.Gateway.OwnerIDs)
 	}
 
 	// Reload quota config on config changes via pub/sub.
@@ -1041,6 +1230,23 @@ func runGateway() {
 		webFetchTool.UpdatePolicy(updatedCfg.Tools.WebFetch.Policy, updatedCfg.Tools.WebFetch.AllowedDomains, updatedCfg.Tools.WebFetch.BlockedDomains)
 	})
 
+	// Reload TTS providers on config changes via pub/sub.
+	msgBus.Subscribe("tts-config-reload", func(evt bus.Event) {
+		if evt.Name != bus.TopicConfigChanged {
+			return
+		}
+		updatedCfg, ok := evt.Payload.(*config.Config)
+		if !ok {
+			return
+		}
+		newMgr := setupTTS(updatedCfg)
+		if newMgr == nil {
+			return
+		}
+		ttsTool.UpdateManager(newMgr)
+		slog.Info("tts config reloaded", "provider", newMgr.PrimaryProvider(), "auto", string(newMgr.AutoMode()))
+	})
+
 	// Contact collector: auto-collect user info from channels with in-memory dedup cache.
 	var contactCollector *store.ContactCollector
 	if pgStores.Contacts != nil {
@@ -1064,9 +1270,10 @@ func runGateway() {
 		// Broadcast shutdown event
 		server.BroadcastEvent(*protocol.NewEvent(protocol.EventShutdown, nil))
 
-		// Stop channels, cron, and task ticker
+		// Stop channels, cron, heartbeat, and task ticker
 		channelMgr.StopAll(context.Background())
 		pgStores.Cron.Stop()
+		heartbeatTicker.Stop()
 		if taskTicker != nil {
 			taskTicker.Stop()
 		}
@@ -1120,6 +1327,14 @@ func runGateway() {
 		slog.Info("Tailscale enabled. Consider setting GOCLAW_HOST=127.0.0.1 for localhost-only + Tailscale access")
 	}
 
+	// Security warnings
+	if strings.Contains(cfg.Database.PostgresDSN, ":goclaw@") {
+		slog.Warn("security.default_db_password: using default Postgres password — run ./prepare-env.sh to generate a strong one")
+	}
+	if len(cfg.Gateway.AllowedOrigins) == 0 {
+		slog.Warn("security.cors_open: no allowed_origins configured — all WebSocket origins accepted. Set gateway.allowed_origins for production")
+	}
+
 	if err := server.Start(ctx); err != nil {
 		slog.Error("gateway error", "error", err)
 		os.Exit(1)
@@ -1150,6 +1365,14 @@ func teamTaskEventType(eventName string) string {
 		return "approved"
 	case protocol.EventTeamTaskRejected:
 		return "rejected"
+	case protocol.EventTeamTaskCommented:
+		return "commented"
+	case protocol.EventTeamTaskProgress:
+		return "progress"
+	case protocol.EventTeamTaskUpdated:
+		return "updated"
+	case protocol.EventTeamTaskStale:
+		return "stale"
 	default:
 		return ""
 	}

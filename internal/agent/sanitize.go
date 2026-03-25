@@ -20,6 +20,8 @@ import (
 	"log/slog"
 	"regexp"
 	"strings"
+
+	"github.com/nextlevelbuilder/goclaw/internal/store"
 )
 
 // SanitizeAssistantContent applies the full sanitization pipeline to assistant
@@ -346,7 +348,7 @@ func stripMarkdownCode(s string) string {
 // Mentions inside markdown code blocks and inline code are excluded from counting,
 // as they typically appear in architecture explanations rather than actual leaks.
 func StripConfigLeak(content, agentType string) string {
-	if agentType != "predefined" || content == "" {
+	if agentType != store.AgentTypePredefined || content == "" {
 		return content
 	}
 
@@ -404,4 +406,26 @@ func IsSilentReply(text string) bool {
 
 func isWordChar(r rune) bool {
 	return (r >= 'a' && r <= 'z') || (r >= 'A' && r <= 'Z') || (r >= '0' && r <= '9') || r == '_'
+}
+
+// --- Message Directives ([[name:value]]) ---
+
+// messageDirectivePattern matches structured routing tags: [[word]] or [[word:value]].
+// Single-line only (no (?s) dotall). Does NOT match arbitrary [[...]] content.
+var messageDirectivePattern = regexp.MustCompile(`\[\[\w+(?::[^\]\n]+)?\]\]`)
+
+// StripMessageDirectives removes internal [[...]] routing tags from user-facing text,
+// preserving [[tts...]] tags needed by the TTS auto-apply pipeline.
+func StripMessageDirectives(content string) string {
+	if !strings.Contains(content, "[[") {
+		return content
+	}
+	result := messageDirectivePattern.ReplaceAllStringFunc(content, func(match string) string {
+		inner := match[2 : len(match)-2] // strip [[ and ]]
+		if strings.HasPrefix(inner, "tts") {
+			return match // preserve for TTS AutoTagged mode
+		}
+		return ""
+	})
+	return strings.TrimSpace(result)
 }

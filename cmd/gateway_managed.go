@@ -8,9 +8,12 @@ import (
 
 	"github.com/google/uuid"
 
+	"strings"
+
 	"github.com/nextlevelbuilder/goclaw/internal/agent"
 	"github.com/nextlevelbuilder/goclaw/internal/bus"
 	"github.com/nextlevelbuilder/goclaw/internal/config"
+	httpapi "github.com/nextlevelbuilder/goclaw/internal/http"
 	kg "github.com/nextlevelbuilder/goclaw/internal/knowledgegraph"
 	mcpbridge "github.com/nextlevelbuilder/goclaw/internal/mcp"
 	"github.com/nextlevelbuilder/goclaw/internal/media"
@@ -45,22 +48,15 @@ func wireExtras(
 	injectionAction string,
 	appCfg *config.Config,
 	sandboxMgr sandbox.Manager,
-	dynamicLoader *tools.DynamicToolLoader,
 	redisClient any, // nil when built without -tags redis or when Redis is unconfigured
 ) (*tools.ContextFileInterceptor, *mcpbridge.Pool, media.Storage, tools.PostTurnProcessor) {
 	// 1. Build cache instances (in-memory or Redis depending on build tags)
-	agentCtxCache, userCtxCache, gwCache := makeCaches(redisClient)
+	agentCtxCache, userCtxCache := makeCaches(redisClient)
 
 	// 1a. Context file interceptor (created before resolver so callbacks can reference it)
 	var contextFileInterceptor *tools.ContextFileInterceptor
 	if stores.Agents != nil {
 		contextFileInterceptor = tools.NewContextFileInterceptor(stores.Agents, workspace, agentCtxCache, userCtxCache)
-	}
-
-	// 1b. Group writer cache (wraps ListGroupFileWriters with TTL cache)
-	var groupWriterCache *store.GroupWriterCache
-	if stores.Agents != nil {
-		groupWriterCache = store.NewGroupWriterCache(stores.Agents, gwCache)
 	}
 
 	// 1c. Persistent media storage for cross-turn image/document access
@@ -98,7 +94,7 @@ func wireExtras(
 	// 2. User seeding callback: seeds per-user context files on first chat
 	var ensureUserFiles agent.EnsureUserFilesFunc
 	if stores.Agents != nil {
-		ensureUserFiles = buildEnsureUserFiles(stores.Agents, msgBus)
+		ensureUserFiles = buildEnsureUserFiles(stores.Agents, stores.ConfigPermissions)
 	}
 
 	// 3. Context file loader callback: loads per-user context files dynamically
@@ -123,7 +119,7 @@ func wireExtras(
 	// 5. Shared MCP connection pool (eliminates duplicate connections across agents)
 	var mcpPool *mcpbridge.Pool
 	if stores.MCP != nil {
-		mcpPool = mcpbridge.NewPool()
+		mcpPool = mcpbridge.NewPool(mcpbridge.DefaultPoolConfig())
 	}
 
 	// 6. Set up agent resolver: lazy-creates Loops from DB
@@ -153,7 +149,6 @@ func wireExtras(
 		SandboxEnabled:         sandboxEnabled,
 		SandboxContainerDir:    sandboxContainerDir,
 		SandboxWorkspaceAccess: sandboxWorkspaceAccess,
-		DynamicLoader:          dynamicLoader,
 		AgentLinkStore:         stores.AgentLinks,
 		TeamStore:              stores.Teams,
 		DataDir:                workspace,
@@ -161,14 +156,44 @@ func wireExtras(
 		BuiltinToolStore:       stores.BuiltinTools,
 		MCPStore:               stores.MCP,
 		MCPPool:                mcpPool,
-		GroupWriterCache:       groupWriterCache,
+		ConfigPermStore:        stores.ConfigPermissions,
 		MediaStore:             mediaStore,
 		ModelPricing:           appCfg.Telemetry.ModelPricing,
 		TracingStore:           stores.Tracing,
+		MemoryStore:            stores.Memory,
+		TenantStore:            stores.Tenants,
+		BuiltinToolTenantCfgs:  stores.BuiltinToolTenantCfgs,
+		SkillTenantCfgs:        stores.SkillTenantCfgs,
+		Workspace:              workspace,
 		OnEvent: func(event agent.AgentEvent) {
+			// Sign /v1/files/ and /v1/media/ URLs in content before delivery.
+			// Sessions store clean paths; signing happens only at delivery time.
+			secret := httpapi.FileSigningKey()
+			switch m := event.Payload.(type) {
+			case map[string]string:
+				if c, has := m["content"]; has && strings.Contains(c, "/v1/") {
+					m["content"] = httpapi.SignFileURLs(c, secret)
+				}
+			case map[string]any:
+				// Sign /v1/ URLs in content text (run.completed payload is map[string]any).
+				if c, ok := m["content"].(string); ok && strings.Contains(c, "/v1/") {
+					m["content"] = httpapi.SignFileURLs(c, secret)
+				}
+				// Convert media local paths → signed /v1/files/basename?ft=hash
+				if rawMedia, ok := m["media"].([]agent.MediaResult); ok {
+					for i := range rawMedia {
+						basename := filepath.Base(rawMedia[i].Path)
+						url := "/v1/files/" + basename
+						ft := httpapi.SignFileToken(url, secret, httpapi.FileTokenTTL)
+						rawMedia[i].Path = url + "?ft=" + ft
+					}
+					m["media"] = rawMedia
+				}
+			}
 			msgBus.Broadcast(bus.Event{
-				Name:    protocol.EventAgent,
-				Payload: event,
+				Name:     protocol.EventAgent,
+				Payload:  event,
+				TenantID: event.TenantID,
 			})
 		},
 	})
@@ -224,17 +249,17 @@ func wireExtras(
 		}
 	}
 
-	// Wire group writer cache for permission checks
-	if groupWriterCache != nil {
+	// Wire config perm store for file writer permission checks
+	if stores.ConfigPermissions != nil {
 		for _, toolName := range []string{"read_file", "write_file", "edit", "cron"} {
 			if t, ok := toolsReg.Get(toolName); ok {
-				if gwa, ok := t.(tools.GroupWriterAware); ok {
-					gwa.SetGroupWriterCache(groupWriterCache)
+				if cpa, ok := t.(tools.ConfigPermAware); ok {
+					cpa.SetConfigPermStore(stores.ConfigPermissions)
 				}
 			}
 		}
 		if contextFileInterceptor != nil {
-			contextFileInterceptor.SetGroupWriterCache(groupWriterCache)
+			contextFileInterceptor.SetConfigPermStore(stores.ConfigPermissions)
 		}
 	}
 
@@ -360,19 +385,31 @@ func wireExtras(
 		})
 	}
 
-	// Custom tools cache: reload global tools on create/update/delete
-	if dynamicLoader != nil {
-		msgBus.Subscribe(bus.TopicCacheCustomTools, func(event bus.Event) {
+	// Heartbeat cache: invalidate due cache on config changes
+	if hi, ok := stores.Heartbeats.(store.CacheInvalidatable); ok {
+		msgBus.Subscribe(bus.TopicCacheHeartbeat, func(event bus.Event) {
 			if event.Name != protocol.EventCacheInvalidate {
 				return
 			}
 			payload, ok := event.Payload.(bus.CacheInvalidatePayload)
-			if !ok || payload.Kind != bus.CacheKindCustomTools {
+			if !ok || payload.Kind != bus.CacheKindHeartbeat {
 				return
 			}
-			dynamicLoader.ReloadGlobal(context.Background(), toolsReg)
-			// Invalidate all agent caches so they re-resolve with updated tools
-			agentRouter.InvalidateAll()
+			hi.InvalidateCache()
+		})
+	}
+
+	// Config permissions cache: invalidate on grant/revoke changes
+	if pi, ok := stores.ConfigPermissions.(store.CacheInvalidatable); ok {
+		msgBus.Subscribe(bus.TopicCacheConfigPerms, func(event bus.Event) {
+			if event.Name != protocol.EventCacheInvalidate {
+				return
+			}
+			payload, ok := event.Payload.(bus.CacheInvalidatePayload)
+			if !ok || payload.Kind != bus.CacheKindConfigPerms {
+				return
+			}
+			pi.InvalidateCache()
 		})
 	}
 
@@ -391,13 +428,12 @@ func wireExtras(
 		})
 	}
 
-	// Register team tools (team_tasks + team_message + workspace) if team store is available.
+	// Register team tools (team_tasks + workspace interceptor) if team store is available.
 	var postTurn tools.PostTurnProcessor
 	if stores.Teams != nil && stores.Agents != nil {
 		teamMgr := tools.NewTeamToolManager(stores.Teams, stores.Agents, msgBus, workspace)
 		postTurn = teamMgr
 		toolsReg.Register(tools.NewTeamTasksTool(teamMgr))
-		toolsReg.Register(tools.NewTeamMessageTool(teamMgr))
 		// Wire workspace interceptor into write_file so team workspace validation
 		// and event broadcasting happen transparently via existing file tools.
 		wsInterceptor := tools.NewWorkspaceInterceptor(teamMgr)
@@ -449,24 +485,6 @@ func wireExtras(
 		}
 	})
 
-	// Group writer cache: invalidate on writer list changes
-	if groupWriterCache != nil {
-		msgBus.Subscribe(bus.TopicCacheGroupFileWriters, func(event bus.Event) {
-			if event.Name != protocol.EventCacheInvalidate {
-				return
-			}
-			payload, ok := event.Payload.(bus.CacheInvalidatePayload)
-			if !ok || payload.Kind != bus.CacheKindGroupFileWriters {
-				return
-			}
-			if payload.Key != "" {
-				groupWriterCache.Invalidate(payload.Key)
-			} else {
-				groupWriterCache.InvalidateAll()
-			}
-		})
-	}
-
 	// Provider cache: re-register ACP providers on create/update/delete
 	msgBus.Subscribe(bus.TopicCacheProvider, func(event bus.Event) {
 		if event.Name != protocol.EventCacheInvalidate {
@@ -480,7 +498,8 @@ func wireExtras(
 			return
 		}
 		// Re-register from DB if provider still exists and is ACP type
-		p, err := stores.Providers.GetProviderByName(context.Background(), payload.Key)
+		provCtx := store.WithTenantID(context.Background(), event.TenantID)
+		p, err := stores.Providers.GetProviderByName(provCtx, payload.Key)
 		if err != nil {
 			// Provider was deleted or not found — already unregistered by handler
 			return
@@ -528,7 +547,7 @@ func buildKGExtractFunc(kgStore store.KnowledgeGraphStore, bts store.BuiltinTool
 			return
 		}
 
-		p, err := providerReg.Get(settings.ExtractionProvider)
+		p, err := providerReg.Get(ctx, settings.ExtractionProvider)
 		if err != nil {
 			slog.Warn("kg extract: provider not found", "provider", settings.ExtractionProvider, "error", err)
 			return

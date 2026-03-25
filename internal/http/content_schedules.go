@@ -112,7 +112,7 @@ func (h *ContentScheduleHandler) handleCreate(w http.ResponseWriter, r *http.Req
 	jobName := "sched-" + data.ID.String()[:8]
 	msg := "{internal:content_schedule:" + data.ID.String() + "}"
 	sched := store.CronSchedule{Kind: "cron", Expr: body.CronExpression, TZ: tz}
-	if job, err := h.cronSvc.AddJob(jobName, sched, msg, false, "", "", "", ""); err == nil {
+	if job, err := h.cronSvc.AddJob(r.Context(), jobName, sched, msg, false, "", "", "", ""); err == nil {
 		_ = h.store.Update(r.Context(), data.ID, map[string]any{"cron_job_id": job.ID})
 		data.CronJobID = &job.ID
 	}
@@ -187,7 +187,7 @@ func (h *ContentScheduleHandler) handleUpdate(w http.ResponseWriter, r *http.Req
 		patch := store.CronJobPatch{
 			Schedule: &store.CronSchedule{Kind: "cron", Expr: expr, TZ: tz},
 		}
-		_, _ = h.cronSvc.UpdateJob(*existing.CronJobID, patch)
+		_, _ = h.cronSvc.UpdateJob(r.Context(), *existing.CronJobID, patch)
 	}
 
 	if pageIDs, ok := updates["page_ids"]; ok {
@@ -219,7 +219,7 @@ func (h *ContentScheduleHandler) handleDelete(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if existing.CronJobID != nil {
-		_ = h.cronSvc.RemoveJob(*existing.CronJobID)
+		_ = h.cronSvc.RemoveJob(r.Context(), *existing.CronJobID)
 	}
 	writeJSON(w, http.StatusOK, map[string]string{"status": "deleted"})
 }
@@ -251,7 +251,7 @@ func (h *ContentScheduleHandler) handleToggle(w http.ResponseWriter, r *http.Req
 		return
 	}
 	if existing.CronJobID != nil {
-		_ = h.cronSvc.EnableJob(*existing.CronJobID, body.Enabled)
+		_ = h.cronSvc.EnableJob(r.Context(), *existing.CronJobID, body.Enabled)
 	}
 	writeJSON(w, http.StatusOK, map[string]any{"id": id, "enabled": body.Enabled})
 }
